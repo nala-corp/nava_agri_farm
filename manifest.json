@@ -1,0 +1,23 @@
+{
+  "name": "Nava Agri Farm",
+  "short_name": "Nava Agri Farm",
+  "description": "Farming Management App",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#536D3C",
+  "icons": [
+    {
+      "src": "https://wznkngfafhhmzkfrlczg.supabase.co/storage/v1/object/public/Public/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://wznkngfafhhmzkfrlczg.supabase.co/storage/v1/object/public/Public/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
