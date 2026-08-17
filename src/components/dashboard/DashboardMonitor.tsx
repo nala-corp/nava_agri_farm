@@ -19,11 +19,21 @@ import {
   Sliders,
   X,
   Check,
-  Sparkles
+  Sparkles,
+  Edit3,
+  RotateCcw,
+  HeartPulse,
+  Package,
+  Play
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { StorageService } from '../../services/storage';
-import { SOPStage } from '../../types';
+import { SOPStage, CycleTask } from '../../types';
+import { WeatherWidget } from './WeatherWidget';
+import { TaskCalendarWidget } from './TaskCalendarWidget';
+import { LowStockWidget } from './LowStockWidget';
+import { PlantHealthModal } from './PlantHealthModal';
+import { TaskChecklistModal } from '../tasks/TaskChecklistModal';
 
 export const DashboardMonitor: React.FC = () => {
   const {
@@ -41,6 +51,12 @@ export const DashboardMonitor: React.FC = () => {
   const [selectedStageToEdit, setSelectedStageToEdit] = useState<SOPStage | null>(null);
   const [editStartDay, setEditStartDay] = useState<number>(0);
   const [editEndDay, setEditEndDay] = useState<number>(0);
+
+  // PLANT HEALTH & POPULATION MODAL STATE (Kartu KPI Editor)
+  const [showHealthModal, setShowHealthModal] = useState(false);
+
+  // TASK EXECUTION / CHECKLIST MODAL STATE
+  const [selectedTaskForChecklist, setSelectedTaskForChecklist] = useState<CycleTask | null>(null);
 
   const cycleDay = activeCycle
     ? calculateCycleDay(activeCycle.startDate, activeCycle.landPrepStartDate)
@@ -68,18 +84,39 @@ export const DashboardMonitor: React.FC = () => {
   const completedTasks = cycleTasks.filter(t => t.status === 'completed');
   const pendingTasks = cycleTasks.filter(t => t.status === 'pending');
   const overdueTasks = cycleTasks.filter(t => t.status === 'overdue');
+  const dueTodayTasks = cycleTasks.filter(t => t.status === 'pending' && t.dayOffset <= cycleDay.dayNumber);
   const taskProgressPercent = cycleTasks.length > 0 ? Math.round((completedTasks.length / cycleTasks.length) * 100) : 0;
 
   // Latest monitoring record
   const latestMon = monitoringRecords[0];
 
-  // Plant stats calculation
+  const isLandPrep = cycleDay.isLandPrep || cycleDay.dayNumber < 0;
+
+  // Land prep specific task statistics
+  const landPrepTasks = useMemo(() => {
+    return cycleTasks.filter(t => t.dayOffset < 0);
+  }, [cycleTasks]);
+  const landPrepCompletedCount = landPrepTasks.filter(t => t.status === 'completed').length;
+  const landPrepTotalCount = landPrepTasks.length > 0 ? landPrepTasks.length : 3;
+
+  // Plant stats calculation (only active post-planting)
   const totalPlants = activeCycle?.plantCount || 0;
-  const healthyCount = latestMon ? Math.round((latestMon.healthyCount / (latestMon.plantsInspected || 1)) * totalPlants) : Math.round(totalPlants * 0.96);
-  const attentionCount = latestMon ? Math.round((latestMon.attentionCount / (latestMon.plantsInspected || 1)) * totalPlants) : Math.round(totalPlants * 0.03);
-  const problemCount = latestMon ? Math.round((latestMon.problematicCount / (latestMon.plantsInspected || 1)) * totalPlants) : Math.round(totalPlants * 0.01);
-  const deadCount = latestMon ? latestMon.deadCount : 0;
-  const survivalRate = totalPlants > 0 ? (((totalPlants - deadCount) / totalPlants) * 100).toFixed(1) : '100';
+  const deadCount = !isLandPrep && latestMon ? (latestMon.deadCount ?? 0) : 0;
+  const healthyCount = !isLandPrep
+    ? (latestMon ? latestMon.healthyCount : Math.round(totalPlants * 0.96))
+    : 0;
+  const attentionCount = !isLandPrep
+    ? (latestMon ? latestMon.attentionCount : Math.round(totalPlants * 0.03))
+    : 0;
+  const problemCount = !isLandPrep
+    ? (latestMon ? latestMon.problematicCount : Math.round(totalPlants * 0.01))
+    : 0;
+  const survivalRate = !isLandPrep && totalPlants > 0
+    ? (((totalPlants - deadCount) / totalPlants) * 100).toFixed(1)
+    : '—';
+
+  // Soil & readiness parameters
+  const displaySoilPh = latestMon?.soilPh ? latestMon.soilPh.toFixed(1) : '6.2 - 6.5';
 
   // Determine current active stage from manual override OR SOP snapshot timeline
   const currentStage = useMemo(() => {
@@ -124,6 +161,16 @@ export const DashboardMonitor: React.FC = () => {
     setSelectedStageToEdit(null);
   };
 
+  // Quick Task Action Handlers
+  const handleQuickCompleteTask = (task: CycleTask) => {
+    setSelectedTaskForChecklist(task);
+  };
+
+  const handleRevertTask = (taskId: string) => {
+    StorageService.revertTask(taskId);
+    refreshData();
+  };
+
   if (!activeCycle) {
     return (
       <div className="p-8 text-center bg-white border border-[#e9ece6] rounded-2xl shadow-xs">
@@ -145,6 +192,39 @@ export const DashboardMonitor: React.FC = () => {
   return (
     <div className="space-y-5">
       
+      {/* 0. DUE TODAY & OVERDUE ALERT BANNER */}
+      {(overdueTasks.length > 0 || dueTodayTasks.length > 0) && (
+        <div className="bg-gradient-to-r from-amber-500/10 via-emerald-500/5 to-transparent border border-amber-300 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0">
+              <Clock className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="font-bold text-sm text-slate-800 flex items-center gap-2">
+                Peringatan Kegiatan Hari Ini & Jatuh Tempo
+                {overdueTasks.length > 0 && (
+                  <span className="text-[10px] bg-red-600 text-white font-bold px-2 py-0.2 rounded-md">
+                    {overdueTasks.length} Terlambat
+                  </span>
+                )}
+              </h4>
+              <p className="text-xs text-gray-600 mt-0.5">
+                Ada <strong className="text-emerald-800">{dueTodayTasks.length} tugas SOP</strong> yang terjadwal untuk dikerjakan hari ini ({cycleDay.label}).
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-end sm:self-center">
+            <button
+              onClick={() => setActiveTab('dashboard_tasks')}
+              className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl cursor-pointer transition-colors shadow-xs flex items-center gap-1"
+            >
+              Buka Daftar Tugas <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 1. HERO CONTEXT CARD & CURRENT STAGE BANNER */}
       <div className="bg-white border border-[#e9ece6] rounded-2xl p-4 sm:p-6 shadow-xs relative overflow-hidden">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 relative z-10">
@@ -296,212 +376,196 @@ export const DashboardMonitor: React.FC = () => {
 
       </div>
 
-      {/* STAGE ADJUSTMENT & SWITCHING MODAL */}
-      {showStageModal && selectedStageToEdit && activeCycle && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/50 backdrop-blur-xs">
-          <div className="bg-white border border-[#e9ece6] rounded-2xl w-full max-w-md p-5 text-slate-800 text-xs shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-[#e9ece6]">
-              <div className="flex items-center gap-2">
-                <Sliders className="w-4 h-4 text-emerald-600" />
-                <h3 className="text-sm font-bold text-slate-800">
-                  Pengaturan Fase: {selectedStageToEdit.name}
-                </h3>
-              </div>
-              <button
-                onClick={() => setShowStageModal(false)}
-                className="p-1 text-gray-400 hover:text-slate-700 rounded-lg cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Quick Switch Action */}
-            <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="font-bold text-emerald-950 block text-xs">Pindah Status Tahapan Aktif</span>
-                  <span className="text-[11px] text-emerald-800">
-                    Jadikan fase <strong>{selectedStageToEdit.name}</strong> sebagai fase yang sedang berjalan saat ini di lapangan.
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 pt-1">
-                {activeCycle.activeStageId === selectedStageToEdit.id ? (
-                  <div className="flex items-center gap-2">
-                    <span className="px-2.5 py-1 bg-emerald-600 text-white font-bold rounded-lg text-xs flex items-center gap-1">
-                      <Check className="w-3.5 h-3.5" /> Sedang Aktif
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        handleSetActiveStage(null);
-                        setShowStageModal(false);
-                      }}
-                      className="text-xs text-gray-600 hover:text-slate-800 underline font-medium cursor-pointer"
-                    >
-                      Reset ke Otomatis
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleSetActiveStage(selectedStageToEdit.id);
-                      setShowStageModal(false);
-                    }}
-                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
-                  >
-                    <Check className="w-3.5 h-3.5" /> Jadikan Tahap Aktif Sekarang
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Stage Duration Form */}
-            <form onSubmit={handleSaveStageDays} className="space-y-3 pt-2">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-slate-800">Sesuaikan Target Hari Pada Siklus Ini</span>
-                <span className="text-[10px] text-gray-500">Khusus Siklus {activeCycle.cycleCode}</span>
-              </div>
-              <p className="text-[11px] text-gray-500">
-                Ubah rentang waktu fase jika kondisi riil lapangan berbeda (misal olah lahan butuh 30 hari atau 21 hari).
-              </p>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-gray-600 mb-1 font-medium">Mulai (Offset Hari)</label>
-                  <input
-                    type="number"
-                    value={editStartDay}
-                    onChange={e => setEditStartDay(Number(e.target.value))}
-                    className="w-full bg-[#f9faf8] border border-[#e1e5db] rounded-xl px-3 py-2 text-slate-800 font-mono text-center font-bold text-sm"
-                    placeholder="Contoh: -30 atau 1"
-                    required
-                  />
-                  <span className="text-[10px] text-gray-400 block mt-0.5 text-center">
-                    {editStartDay < 0 ? `${Math.abs(editStartDay)} hari pra-tanam` : `H+${editStartDay}`}
-                  </span>
-                </div>
-
-                <div>
-                  <label className="block text-gray-600 mb-1 font-medium">Selesai (Offset Hari)</label>
-                  <input
-                    type="number"
-                    value={editEndDay}
-                    onChange={e => setEditEndDay(Number(e.target.value))}
-                    className="w-full bg-[#f9faf8] border border-[#e1e5db] rounded-xl px-3 py-2 text-slate-800 font-mono text-center font-bold text-sm"
-                    placeholder="Contoh: -1 atau 20"
-                    required
-                  />
-                  <span className="text-[10px] text-gray-400 block mt-0.5 text-center">
-                    {editEndDay < 0 ? `${Math.abs(editEndDay)} hari pra-tanam` : `H+${editEndDay}`}
-                  </span>
-                </div>
-              </div>
-
-              {/* Tasks preview in this stage */}
-              <div className="bg-[#f9faf8] p-3 rounded-xl border border-[#e9ece6] space-y-1.5">
-                <span className="font-bold text-gray-700 text-[11px] block">
-                  Daftar Tugas Standar Pada Fase Ini:
+      {/* 2. STATUS LAHAN / KESEHATAN TANAMAN & KEY METRICS (CLICKABLE & EDITABLE) */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between px-1">
+          <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+            {isLandPrep ? (
+              <>
+                <Layers className="w-4 h-4 text-amber-700" />
+                <span>Kesiapan Pengolahan Lahan (Pra-Tanam)</span>
+                <span className="text-[10px] font-mono font-bold bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full border border-amber-200">
+                  {cycleDay.label}
                 </span>
-                <div className="max-h-28 overflow-y-auto space-y-1">
-                  {selectedStageToEdit.tasks?.map((t, idx) => (
-                    <div key={t.id || idx} className="text-[11px] text-gray-600 flex items-center justify-between">
-                      <span className="truncate">• {t.name}</span>
-                      <span className="font-mono text-[10px] text-gray-400 shrink-0">H{t.targetDayOffset >= 0 ? `+${t.targetDayOffset}` : t.targetDayOffset}</span>
-                    </div>
-                  ))}
-                </div>
+              </>
+            ) : (
+              <>
+                <HeartPulse className="w-4 h-4 text-emerald-700" />
+                <span>Ringkasan Populasi & Kesehatan Tanaman</span>
+                <span className="text-[10px] font-mono font-bold bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded-full border border-emerald-200">
+                  {cycleDay.label}
+                </span>
+              </>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowHealthModal(true)}
+            className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
+            title={isLandPrep ? 'Ubah target rencana populasi atau kondisi pH tanah' : 'Klik untuk mengubah nilai populasi, tanaman sehat, sakit, dan insiden hama'}
+          >
+            <Edit3 className="w-3.5 h-3.5 text-emerald-700" />
+            {isLandPrep ? 'Ubah Rencana & Kondisi Tanah' : 'Ubah Angka & Kondisi Kartu'}
+          </button>
+        </div>
+
+        {/* Informative notice for Land Prep */}
+        {isLandPrep && (
+          <div className="bg-amber-50/80 border border-amber-200 rounded-xl px-3 py-2 flex items-center justify-between text-xs text-amber-900">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+              <span>
+                <strong>Fase Pra-Tanam:</strong> Tanaman belum dipindah ke bedengan. Menampilkan target rencana populasi bibit, kesiapan tanah, dan progres olah lahan.
+              </span>
+            </div>
+            <span className="text-[10px] text-amber-800 font-medium">Metrik Sehat/Sakit aktif saat H-0</span>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          
+          {/* Card 1: Populasi / Target Rencana */}
+          <div
+            onClick={() => setShowHealthModal(true)}
+            className="bg-white border border-[#e9ece6] hover:border-emerald-300 hover:ring-2 hover:ring-emerald-400/20 rounded-2xl p-4 shadow-xs cursor-pointer transition-all group"
+            title="Klik untuk ubah total target bibit atau populasi tanaman"
+          >
+            <div className="flex items-center justify-between text-gray-500 text-xs mb-2">
+              <span className="font-medium group-hover:text-emerald-800">
+                {isLandPrep ? 'Target Populasi' : 'Populasi & Survival'}
+              </span>
+              <div className="flex items-center gap-1 text-emerald-600">
+                <Sprout className="w-4 h-4" />
+                <Edit3 className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
               </div>
-
-              <div className="pt-2 border-t border-[#e9ece6] flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowStageModal(false)}
-                  className="px-3.5 py-2 rounded-xl bg-[#f3f5f0] text-slate-700 hover:bg-[#e9ece6] font-semibold cursor-pointer"
-                >
-                  Tutup
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold cursor-pointer shadow-xs"
-                >
-                  Simpan Durasi
-                </button>
-              </div>
-            </form>
+            </div>
+            <div className="text-xl sm:text-2xl font-bold text-slate-800 font-mono">
+              {totalPlants.toLocaleString('id-ID')} <span className="text-xs font-sans text-gray-400 font-normal">bibit</span>
+            </div>
+            <div className="mt-2 flex items-center justify-between text-xs pt-2 border-t border-[#e9ece6]">
+              <span className="text-gray-500">{isLandPrep ? 'Status Bibit' : 'Survival Rate'}</span>
+              <span className={`font-bold font-mono ${isLandPrep ? 'text-amber-700 font-sans text-[11px]' : 'text-emerald-700'}`}>
+                {isLandPrep ? 'Di Persemaian' : `${survivalRate}%`}
+              </span>
+            </div>
           </div>
+
+          {/* Card 2: Kondisi Tanaman Sehat (atau Status Tanam jika Land Prep) */}
+          <div
+            onClick={() => setShowHealthModal(true)}
+            className="bg-white border border-[#e9ece6] hover:border-emerald-300 hover:ring-2 hover:ring-emerald-400/20 rounded-2xl p-4 shadow-xs cursor-pointer transition-all group"
+            title={isLandPrep ? 'Bibit siap tanam setelah pengolahan lahan selesai' : 'Klik untuk sesuaikan jumlah tanaman sehat'}
+          >
+            <div className="flex items-center justify-between text-gray-500 text-xs mb-2">
+              <span className="font-medium group-hover:text-emerald-800">
+                {isLandPrep ? 'Kondisi Tanaman' : 'Kondisi Sehat'}
+              </span>
+              <span className={`w-2.5 h-2.5 rounded-full ${isLandPrep ? 'bg-amber-400' : 'bg-emerald-500'}`}></span>
+            </div>
+            <div className={`text-xl sm:text-2xl font-bold font-mono ${isLandPrep ? 'text-slate-700 font-sans text-lg sm:text-xl' : 'text-emerald-700'}`}>
+              {isLandPrep ? 'Belum Ditanam' : healthyCount.toLocaleString('id-ID')}
+            </div>
+            <div className="mt-2 flex items-center justify-between text-xs pt-2 border-t border-[#e9ece6]">
+              <span className="text-gray-500">{isLandPrep ? 'Fase Saat Ini' : 'Porsi Populasi'}</span>
+              <span className="font-semibold text-slate-700">
+                {isLandPrep ? 'Persiapan Lahan' : `${totalPlants > 0 ? Math.round((healthyCount / totalPlants) * 100) : 100}%`}
+              </span>
+            </div>
+          </div>
+
+          {/* Card 3: Kesiapan Tanah / pH (atau Perhatian & Sakit jika Post-Planting) */}
+          <div
+            onClick={() => setShowHealthModal(true)}
+            className={`bg-white border border-[#e9ece6] ${isLandPrep ? 'hover:border-sky-300 hover:ring-2 hover:ring-sky-400/20' : 'hover:border-amber-300 hover:ring-2 hover:ring-amber-400/20'} rounded-2xl p-4 shadow-xs cursor-pointer transition-all group`}
+            title={isLandPrep ? 'Klik untuk atur pH tanah dan kelembaban' : 'Klik untuk sesuaikan jumlah tanaman perlu perhatian/sakit'}
+          >
+            <div className="flex items-center justify-between text-gray-500 text-xs mb-2">
+              <span className={`font-medium ${isLandPrep ? 'group-hover:text-sky-800' : 'group-hover:text-amber-800'}`}>
+                {isLandPrep ? 'Kesiapan Tanah & pH' : 'Perhatian & Sakit'}
+              </span>
+              {isLandPrep ? (
+                <Thermometer className="w-4 h-4 text-sky-600" />
+              ) : (
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+              )}
+            </div>
+            <div className={`text-xl sm:text-2xl font-bold font-mono ${isLandPrep ? 'text-sky-700' : 'text-amber-700'}`}>
+              {isLandPrep ? `pH ${displaySoilPh}` : (attentionCount + problemCount).toLocaleString('id-ID')}
+            </div>
+            <div className="mt-2 flex items-center justify-between text-xs pt-2 border-t border-[#e9ece6]">
+              {isLandPrep ? (
+                <>
+                  <span className="text-gray-500">Standar SOP</span>
+                  <span className="text-emerald-700 font-semibold">6.0 - 7.0 (Optimal)</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-gray-500">Perhatian: {attentionCount}</span>
+                  <span className="text-red-600 font-medium">Bermasalah: {problemCount}</span>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Card 4: Progres Olah Lahan (atau Insiden Hama jika Post-Planting) */}
+          <div
+            onClick={() => setShowHealthModal(true)}
+            className={`bg-white border border-[#e9ece6] ${isLandPrep ? 'hover:border-emerald-300 hover:ring-2 hover:ring-emerald-400/20' : 'hover:border-red-300 hover:ring-2 hover:ring-red-400/20'} rounded-2xl p-4 shadow-xs cursor-pointer transition-all group`}
+            title={isLandPrep ? 'Progres SOP Olah Lahan' : 'Klik untuk mencatat atau memperbarui kasus hama/penyakit'}
+          >
+            <div className="flex items-center justify-between text-gray-500 text-xs mb-2">
+              <span className={`font-medium ${isLandPrep ? 'group-hover:text-emerald-800' : 'group-hover:text-red-800'}`}>
+                {isLandPrep ? 'Progres Olah Lahan' : 'Insiden Hama / Penyakit'}
+              </span>
+              {isLandPrep ? (
+                <FileCheck2 className="w-4 h-4 text-emerald-600" />
+              ) : (
+                <Bug className="w-4 h-4 text-red-500" />
+              )}
+            </div>
+            <div className={`text-xl sm:text-2xl font-bold font-mono ${isLandPrep ? 'text-emerald-700' : 'text-red-600'}`}>
+              {isLandPrep
+                ? `${landPrepCompletedCount} / ${landPrepTotalCount}`
+                : `${pestObs.filter(p => !p.resolved).length + diseaseObs.filter(d => !d.resolved).length}`}
+              <span className="text-xs font-sans text-gray-400 font-normal ml-1">
+                {isLandPrep ? 'SOP' : 'kasus aktif'}
+              </span>
+            </div>
+            <div className="mt-2 flex items-center justify-between text-xs pt-2 border-t border-[#e9ece6]">
+              <span className="text-gray-500">{isLandPrep ? 'Tahap' : 'Status Terbaru'}</span>
+              <span className="text-slate-700 font-medium truncate max-w-[120px]">
+                {isLandPrep ? (currentStage?.name || 'Pengolahan Lahan') : (pestObs.length > 0 ? pestObs[0].severity : 'Nihil')}
+              </span>
+            </div>
+          </div>
+
         </div>
-      )}
-
-      {/* 2. PLANT HEALTH STATUS & KEY METRICS */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        
-        {/* Card 1: Total Tanaman & Survival Rate */}
-        <div className="bg-white border border-[#e9ece6] rounded-2xl p-4 shadow-xs">
-          <div className="flex items-center justify-between text-gray-500 text-xs mb-2">
-            <span className="font-medium">Populasi & Survival</span>
-            <Sprout className="w-4 h-4 text-emerald-600" />
-          </div>
-          <div className="text-xl sm:text-2xl font-bold text-slate-800 font-mono">
-            {totalPlants.toLocaleString('id-ID')} <span className="text-xs font-sans text-gray-400 font-normal">pohon</span>
-          </div>
-          <div className="mt-2 flex items-center justify-between text-xs pt-2 border-t border-[#e9ece6]">
-            <span className="text-gray-500">Survival Rate</span>
-            <span className="font-bold text-emerald-700 font-mono">{survivalRate}%</span>
-          </div>
-        </div>
-
-        {/* Card 2: Kondisi Tanaman Sehat */}
-        <div className="bg-white border border-[#e9ece6] rounded-2xl p-4 shadow-xs">
-          <div className="flex items-center justify-between text-gray-500 text-xs mb-2">
-            <span className="font-medium">Kondisi Sehat</span>
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-          </div>
-          <div className="text-xl sm:text-2xl font-bold text-emerald-700 font-mono">
-            {healthyCount.toLocaleString('id-ID')}
-          </div>
-          <div className="mt-2 flex items-center justify-between text-xs pt-2 border-t border-[#e9ece6]">
-            <span className="text-gray-500">Porsi Populasi</span>
-            <span className="font-semibold text-slate-700">
-              {totalPlants > 0 ? Math.round((healthyCount / totalPlants) * 100) : 100}%
-            </span>
-          </div>
-        </div>
-
-        {/* Card 3: Perhatian & Bermasalah */}
-        <div className="bg-white border border-[#e9ece6] rounded-2xl p-4 shadow-xs">
-          <div className="flex items-center justify-between text-gray-500 text-xs mb-2">
-            <span className="font-medium">Perhatian & Sakit</span>
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
-          </div>
-          <div className="text-xl sm:text-2xl font-bold text-amber-700 font-mono">
-            {(attentionCount + problemCount).toLocaleString('id-ID')}
-          </div>
-          <div className="mt-2 flex items-center justify-between text-xs pt-2 border-t border-[#e9ece6]">
-            <span className="text-gray-500">Perhatian: {attentionCount}</span>
-            <span className="text-red-600 font-medium">Bermasalah: {problemCount}</span>
-          </div>
-        </div>
-
-        {/* Card 4: Insiden Hama & Penyakit Aktif */}
-        <div className="bg-white border border-[#e9ece6] rounded-2xl p-4 shadow-xs">
-          <div className="flex items-center justify-between text-gray-500 text-xs mb-2">
-            <span className="font-medium">Insiden Hama / Penyakit</span>
-            <Bug className="w-4 h-4 text-red-500" />
-          </div>
-          <div className="text-xl sm:text-2xl font-bold text-red-600 font-mono">
-            {pestObs.filter(p => !p.resolved).length + diseaseObs.filter(d => !d.resolved).length} <span className="text-xs font-sans text-gray-400 font-normal">kasus aktif</span>
-          </div>
-          <div className="mt-2 flex items-center justify-between text-xs pt-2 border-t border-[#e9ece6]">
-            <span className="text-gray-500">Status Terbaru</span>
-            <span className="text-slate-700 font-medium">{pestObs.length > 0 ? pestObs[0].severity : 'Nihil'}</span>
-          </div>
-        </div>
-
       </div>
 
-      {/* 3. TODAY'S ACTIONS & LATEST MONITORING METERS */}
+      {/* 3. WIDGET CUACA & INVENTARIS STOK MENIPIS (Opsi A) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="lg:col-span-2">
+          <WeatherWidget locationName={activeCycle.fieldName || 'Karanganyar, Jawa Tengah'} />
+        </div>
+        <div className="lg:col-span-1">
+          <LowStockWidget
+            inventory={inventory}
+            onOpenInventory={() => setActiveTab('inventory')}
+            onRefresh={refreshData}
+          />
+        </div>
+      </div>
+
+      {/* 4. VISUAL TASK CALENDAR & TIMELINE WIDGET (Opsi A) */}
+      <TaskCalendarWidget
+        tasks={cycleTasks}
+        cycleStartDate={activeCycle.startDate}
+        onExecuteTask={(t) => setSelectedTaskForChecklist(t)}
+        onQuickComplete={(t) => setSelectedTaskForChecklist(t)}
+        onRevertTask={handleRevertTask}
+      />
+
+      {/* 5. TODAY'S ACTIONS & LATEST MONITORING METERS */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         
         {/* Left Column: Tasks Pending for this Cycle (2 Cols) */}
@@ -510,7 +574,9 @@ export const DashboardMonitor: React.FC = () => {
             <div className="flex items-center justify-between pb-3 border-b border-[#e9ece6]">
               <div className="flex items-center gap-2">
                 <Clock className="w-4 h-4 text-emerald-700" />
-                <h3 className="font-bold text-sm text-slate-800">Tugas SOP Siklus Ini ({pendingTasks.length} Menunggu)</h3>
+                <h3 className="font-bold text-sm text-slate-800">
+                  Tugas SOP Siklus Ini ({pendingTasks.length} Menunggu)
+                </h3>
               </div>
               <button
                 onClick={() => setActiveTab('dashboard_tasks')}
@@ -521,7 +587,7 @@ export const DashboardMonitor: React.FC = () => {
             </div>
 
             <div className="mt-3 space-y-2.5">
-              {pendingTasks.slice(0, 3).map((task) => (
+              {pendingTasks.slice(0, 4).map((task) => (
                 <div
                   key={task.id}
                   className="p-3.5 rounded-xl bg-[#fbfcfb] hover:bg-[#f3f5f0] border border-[#e9ece6] flex items-start justify-between gap-3 transition-colors"
@@ -545,19 +611,30 @@ export const DashboardMonitor: React.FC = () => {
                       {task.description}
                     </p>
 
-                    <div className="flex items-center gap-3 text-[11px] text-gray-400 mt-1.5">
+                    <div className="flex items-center gap-3 text-[11px] text-gray-400 mt-1.5 flex-wrap">
                       <span>Fase: {task.stageName}</span>
                       <span>•</span>
                       <span>Target: {task.deadlineTime || '12:00'} WIB</span>
+                      {task.fields?.length > 0 && (
+                        <>
+                          <span>•</span>
+                          <span className="text-emerald-700 font-medium">
+                            {task.fields.length} checklist item
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => setActiveTab('dashboard_tasks')}
-                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors shrink-0 cursor-pointer shadow-xs"
-                  >
-                    Kerjakan
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => handleQuickCompleteTask(task)}
+                      className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors shrink-0 cursor-pointer shadow-xs flex items-center gap-1"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Checklist / Selesai
+                    </button>
+                  </div>
                 </div>
               ))}
 
@@ -726,6 +803,169 @@ export const DashboardMonitor: React.FC = () => {
         </div>
 
       </div>
+
+      {/* PLANT HEALTH & POPULATION KPI MODAL */}
+      <PlantHealthModal
+        isOpen={showHealthModal}
+        onClose={() => setShowHealthModal(false)}
+        activeCycle={activeCycle}
+        latestRecord={latestMon}
+        currentDayOffset={cycleDay.dayNumber}
+        isLandPrep={isLandPrep}
+        onSuccess={() => {
+          refreshData();
+        }}
+      />
+
+      {/* TASK CHECKLIST MODAL */}
+      <TaskChecklistModal
+        task={selectedTaskForChecklist}
+        isOpen={!!selectedTaskForChecklist}
+        onClose={() => setSelectedTaskForChecklist(null)}
+        inventory={inventory}
+        cyclePlantCount={activeCycle.plantCount}
+        onSuccess={() => {
+          refreshData();
+        }}
+      />
+
+      {/* STAGE ADJUSTMENT & SWITCHING MODAL */}
+      {showStageModal && selectedStageToEdit && activeCycle && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/50 backdrop-blur-xs">
+          <div className="bg-white border border-[#e9ece6] rounded-2xl w-full max-w-md p-5 text-slate-800 text-xs shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[#e9ece6]">
+              <div className="flex items-center gap-2">
+                <Sliders className="w-4 h-4 text-emerald-600" />
+                <h3 className="text-sm font-bold text-slate-800">
+                  Pengaturan Fase: {selectedStageToEdit.name}
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowStageModal(false)}
+                className="p-1 text-gray-400 hover:text-slate-700 rounded-lg cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Quick Switch Action */}
+            <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-emerald-950 block text-xs">Pindah Status Tahapan Aktif</span>
+                  <span className="text-[11px] text-emerald-800">
+                    Jadikan fase <strong>{selectedStageToEdit.name}</strong> sebagai fase yang sedang berjalan saat ini di lapangan.
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                {activeCycle.activeStageId === selectedStageToEdit.id ? (
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-1 bg-emerald-600 text-white font-bold rounded-lg text-xs flex items-center gap-1">
+                      <Check className="w-3.5 h-3.5" /> Sedang Aktif
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleSetActiveStage(null);
+                        setShowStageModal(false);
+                      }}
+                      className="text-xs text-gray-600 hover:text-slate-800 underline font-medium cursor-pointer"
+                    >
+                      Reset ke Otomatis
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleSetActiveStage(selectedStageToEdit.id);
+                      setShowStageModal(false);
+                    }}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+                  >
+                    <Check className="w-3.5 h-3.5" /> Jadikan Tahap Aktif Sekarang
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Stage Duration Form */}
+            <form onSubmit={handleSaveStageDays} className="space-y-3 pt-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-slate-800">Sesuaikan Target Hari Pada Siklus Ini</span>
+                <span className="text-[10px] text-gray-500">Khusus Siklus {activeCycle.cycleCode}</span>
+              </div>
+              <p className="text-[11px] text-gray-500">
+                Ubah rentang waktu fase jika kondisi riil lapangan berbeda (misal olah lahan butuh 30 hari atau 21 hari).
+              </p>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-gray-600 mb-1 font-medium">Mulai (Offset Hari)</label>
+                  <input
+                    type="number"
+                    value={editStartDay}
+                    onChange={e => setEditStartDay(Number(e.target.value))}
+                    className="w-full bg-[#f9faf8] border border-[#e1e5db] rounded-xl px-3 py-2 text-slate-800 font-mono text-center font-bold text-sm"
+                    placeholder="Contoh: -30 atau 1"
+                    required
+                  />
+                  <span className="text-[10px] text-gray-400 block mt-0.5 text-center">
+                    {editStartDay < 0 ? `${Math.abs(editStartDay)} hari pra-tanam` : `H+${editStartDay}`}
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block text-gray-600 mb-1 font-medium">Selesai (Offset Hari)</label>
+                  <input
+                    type="number"
+                    value={editEndDay}
+                    onChange={e => setEditEndDay(Number(e.target.value))}
+                    className="w-full bg-[#f9faf8] border border-[#e1e5db] rounded-xl px-3 py-2 text-slate-800 font-mono text-center font-bold text-sm"
+                    placeholder="Contoh: -1 atau 20"
+                    required
+                  />
+                  <span className="text-[10px] text-gray-400 block mt-0.5 text-center">
+                    {editEndDay < 0 ? `${Math.abs(editEndDay)} hari pra-tanam` : `H+${editEndDay}`}
+                  </span>
+                </div>
+              </div>
+
+              {/* Tasks preview in this stage */}
+              <div className="bg-[#f9faf8] p-3 rounded-xl border border-[#e9ece6] space-y-1.5">
+                <span className="font-bold text-gray-700 text-[11px] block">
+                  Daftar Tugas Standar Pada Fase Ini:
+                </span>
+                <div className="max-h-28 overflow-y-auto space-y-1">
+                  {selectedStageToEdit.tasks?.map((t, idx) => (
+                    <div key={t.id || idx} className="text-[11px] text-gray-600 flex items-center justify-between">
+                      <span className="truncate">• {t.name}</span>
+                      <span className="font-mono text-[10px] text-gray-400 shrink-0">H{t.targetDayOffset >= 0 ? `+${t.targetDayOffset}` : t.targetDayOffset}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-[#e9ece6] flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowStageModal(false)}
+                  className="px-3.5 py-2 rounded-xl bg-[#f3f5f0] text-slate-700 hover:bg-[#e9ece6] font-semibold cursor-pointer"
+                >
+                  Tutup
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold cursor-pointer shadow-xs"
+                >
+                  Simpan Durasi
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );

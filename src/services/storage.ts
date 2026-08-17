@@ -1517,16 +1517,8 @@ export function generateCycleTasksFromSnapshot(
       taskDate.setDate(taskDate.getDate() + task.targetDayOffset);
       const scheduledDateStr = taskDate.toISOString().split('T')[0];
 
-      // Calculate initial status based on target offset
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const targetTime = new Date(scheduledDateStr);
-      targetTime.setHours(0, 0, 0, 0);
-
-      let initialStatus: 'pending' | 'in_progress' | 'completed' | 'skipped' | 'overdue' | 'cancelled' = 'pending';
-      if (task.targetDayOffset < 0) {
-        initialStatus = 'completed'; // Pre-planting historical
-      }
+      // Tasks start as pending so farmer executes them from day 1 of land prep
+      const initialStatus: 'pending' | 'in_progress' | 'completed' | 'skipped' | 'overdue' | 'cancelled' = 'pending';
 
       cycleTasks.push({
         id: `ctask-${cycleId}-${task.id}`,
@@ -1649,6 +1641,28 @@ const defaultCycles: CultivationCycle[] = [
     status: 'active',
     notes: 'Fase daun 5-6 helai, pertumbuhan seragam.',
     createdAt: '2026-07-21'
+  },
+  {
+    id: 'cycle-04',
+    cycleCode: 'SIK-2026-004',
+    fieldId: 'f-04',
+    fieldName: 'Lahan D — Boyolali',
+    cropTypeId: 'crop-01',
+    cropTypeName: 'Cabai',
+    cropIcon: '🌶️',
+    varietyId: 'var-03',
+    varietyName: 'Cabai Merah Besar (Gada MK)',
+    plantCount: 4000,
+    landPrepStartDate: '2026-08-03', // Pengolahan lahan dimulai 21 hari sebelum tanam
+    startDate: '2026-08-24', // Hari Tanam H-0 (Hari ini H-7: Pemasangan Mulsa)
+    estimatedHarvestDate: '2026-11-25',
+    sopTemplateId: 'sop-cabai',
+    sopVersionId: 'ver-cabai-v2.1',
+    sopSnapshot: defaultSnapshotCabai,
+    activeStageId: 'stg-01', // Aktif di Tahap 1: Pengolahan Lahan & Dasar
+    status: 'active',
+    notes: 'Siklus baru dalam fase persiapan lahan, pembajakan & pemupukan dasar bedengan.',
+    createdAt: '2026-08-03'
   }
 ];
 
@@ -1688,6 +1702,46 @@ initialCycle02Tasks.forEach(t => {
   if (t.dayOffset <= 42) {
     t.status = 'completed';
     t.completedAt = '2026-08-15T09:00:00Z';
+  } else {
+    t.status = 'pending';
+  }
+});
+
+// Tasks for Cycle 04 (Currently in Land Prep Phase!)
+const initialCycle04Tasks = generateCycleTasksFromSnapshot('cycle-04', '2026-08-24', defaultSnapshotCabai);
+initialCycle04Tasks.forEach(t => {
+  if (t.dayOffset === -21) {
+    t.status = 'completed';
+    t.completedAt = '2026-08-03T10:00:00Z';
+    t.submission = {
+      id: `sub-${t.id}`,
+      cycleTaskId: t.id,
+      cycleId: 'cycle-04',
+      submittedAt: '2026-08-03T10:00:00Z',
+      submittedBy: 'Pak Budi',
+      fieldValues: {
+        soil_ph: 6.2,
+        dolomit_applied_kg: 200
+      },
+      notes: 'Pembersihan lahan dan tabur kapur dolomit selesai. pH tanah awal 6.2.'
+    };
+  } else if (t.dayOffset === -14) {
+    t.status = 'completed';
+    t.completedAt = '2026-08-10T11:00:00Z';
+    t.submission = {
+      id: `sub-${t.id}`,
+      cycleTaskId: t.id,
+      cycleId: 'cycle-04',
+      submittedAt: '2026-08-10T11:00:00Z',
+      submittedBy: 'Pak Budi',
+      fieldValues: {
+        pukan_total_kg: 800,
+        npk_dasar_kg: 40
+      },
+      notes: 'Pupuk kandang matang dan NPK dasar sudah diaduk rata di bedengan.'
+    };
+  } else if (t.dayOffset === -7) {
+    t.status = 'pending'; // Today's active Land Prep task!
   } else {
     t.status = 'pending';
   }
@@ -1954,10 +2008,25 @@ export class StorageService {
     }
     if (!localStorage.getItem(STORAGE_KEYS.CYCLES)) {
       this.setItem(STORAGE_KEYS.CYCLES, defaultCycles);
+    } else {
+      // Ensure default cycles like cycle-04 exist
+      const existingCycles = this.getItem<CultivationCycle[]>(STORAGE_KEYS.CYCLES, []);
+      if (!existingCycles.some(c => c.id === 'cycle-04')) {
+        const c4 = defaultCycles.find(c => c.id === 'cycle-04');
+        if (c4) {
+          existingCycles.push(c4);
+          this.setItem(STORAGE_KEYS.CYCLES, existingCycles);
+        }
+      }
     }
     if (!localStorage.getItem(STORAGE_KEYS.TASKS)) {
-      const allTasks = [...initialCycle01Tasks, ...initialCycle02Tasks];
+      const allTasks = [...initialCycle01Tasks, ...initialCycle02Tasks, ...initialCycle04Tasks];
       this.setItem(STORAGE_KEYS.TASKS, allTasks);
+    } else {
+      const existingTasks = this.getItem<CycleTask[]>(STORAGE_KEYS.TASKS, []);
+      if (!existingTasks.some(t => t.cycleId === 'cycle-04')) {
+        this.setItem(STORAGE_KEYS.TASKS, [...existingTasks, ...initialCycle04Tasks]);
+      }
     }
     if (!localStorage.getItem(STORAGE_KEYS.MONITORING)) {
       this.setItem(STORAGE_KEYS.MONITORING, defaultMonitoringRecords);
@@ -2354,6 +2423,129 @@ export class StorageService {
     SupabaseService.upsertTask(task).catch((err) =>
       console.warn('[Supabase Sync Error]', err)
     );
+  }
+
+  public static revertTask(taskId: string): void {
+    const tasks = this.getTasks();
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    task.status = 'pending';
+    task.completedAt = undefined;
+    task.submission = undefined;
+
+    this.setItem(STORAGE_KEYS.TASKS, tasks);
+
+    this.addAuditLog({
+      entityType: 'cycle_task',
+      action: 'update',
+      description: `Membatalkan status selesai (reset ke pending) untuk tugas: ${task.taskName} (${task.stageName}).`,
+      cycleId: task.cycleId
+    });
+
+    SupabaseService.upsertTask(task).catch((err) =>
+      console.warn('[Supabase Sync Error]', err)
+    );
+  }
+
+  public static quickCompleteTask(
+    taskId: string,
+    fieldValues: Record<string, any> = {},
+    notes?: string
+  ): void {
+    const tasks = this.getTasks();
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    const submission: TaskSubmission = {
+      id: `sub-${Date.now()}`,
+      cycleTaskId: taskId,
+      cycleId: task.cycleId,
+      submittedAt: new Date().toISOString(),
+      submittedBy: 'Operator Lapangan (Quick Checklist)',
+      fieldValues: { ...fieldValues },
+      notes: notes || 'Diselesaikan via checklist kegiatan harian.'
+    };
+
+    task.status = 'completed';
+    task.completedAt = new Date().toISOString();
+    task.submission = submission;
+
+    this.setItem(STORAGE_KEYS.TASKS, tasks);
+
+    this.addAuditLog({
+      entityType: 'cycle_task',
+      action: 'execute',
+      description: `Checklist selesai: ${task.taskName} (${task.stageName}).`,
+      cycleId: task.cycleId
+    });
+
+    SupabaseService.upsertTask(task).catch((err) =>
+      console.warn('[Supabase Sync Error]', err)
+    );
+  }
+
+  public static updateCyclePlantCount(cycleId: string, plantCount: number): void {
+    const cycles = this.getCycles();
+    const cycle = cycles.find(c => c.id === cycleId);
+    if (!cycle) return;
+
+    const oldCount = cycle.plantCount;
+    cycle.plantCount = Math.max(0, plantCount);
+    this.setItem(STORAGE_KEYS.CYCLES, cycles);
+
+    this.addAuditLog({
+      entityType: 'cultivation_cycle',
+      action: 'update',
+      description: `Memperbarui total populasi tanaman siklus ${cycle.cycleCode} dari ${oldCount} menjadi ${plantCount} pohon.`,
+      cycleId: cycle.id
+    });
+
+    SupabaseService.upsertCycle(cycle).catch((err) =>
+      console.warn('[Supabase Sync Error]', err)
+    );
+  }
+
+  public static saveQuickPlantHealth(
+    cycleId: string,
+    data: {
+      totalPlants?: number;
+      healthyCount: number;
+      attentionCount: number;
+      problematicCount: number;
+      deadCount: number;
+      soilPh?: number;
+      soilMoisturePercent?: number;
+      averageHeightCm?: number;
+      notes?: string;
+      dayOffset?: number;
+    }
+  ): MonitoringRecord {
+    if (data.totalPlants !== undefined) {
+      this.updateCyclePlantCount(cycleId, data.totalPlants);
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const inspected = (data.healthyCount || 0) + (data.attentionCount || 0) + (data.problematicCount || 0) + (data.deadCount || 0);
+
+    const newRecord: Omit<MonitoringRecord, 'id' | 'createdAt'> = {
+      cycleId,
+      date: todayStr,
+      dayOffset: data.dayOffset !== undefined ? data.dayOffset : 0,
+      plantsInspected: inspected > 0 ? inspected : (data.totalPlants || 1000),
+      healthyCount: data.healthyCount,
+      attentionCount: data.attentionCount,
+      problematicCount: data.problematicCount,
+      deadCount: data.deadCount,
+      pestAffectedCount: data.problematicCount,
+      diseaseAffectedCount: 0,
+      soilPh: data.soilPh,
+      soilMoisturePercent: data.soilMoisturePercent,
+      averageHeightCm: data.averageHeightCm,
+      notes: data.notes || 'Pembaruan kondisi populasi & kesehatan tanaman via Dashboard.',
+    };
+
+    return this.addMonitoringRecord(newRecord);
   }
 
   public static updateTask(task: CycleTask): void {
