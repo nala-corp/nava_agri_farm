@@ -6,7 +6,14 @@ import {
   ArrowDownRight,
   Edit,
   Trash2,
-  AlertCircle
+  AlertCircle,
+  Wrench,
+  Layers,
+  Sprout,
+  HelpCircle,
+  Filter,
+  CheckCircle2,
+  Package
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { StorageService } from '../../services/storage';
@@ -17,6 +24,7 @@ export const FinanceManager: React.FC = () => {
 
   const [filterCycleId, setFilterCycleId] = useState<string>(activeCycle?.id || 'all');
   const [activeTab, setActiveTab] = useState<'overview' | 'expenses' | 'income'>('overview');
+  const [expenseFilterType, setExpenseFilterType] = useState<'all' | 'operational' | 'capital'>('all');
 
   // Modals state for Edit and Delete
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
@@ -33,25 +41,48 @@ export const FinanceManager: React.FC = () => {
     return StorageService.getIncome(filterCycleId === 'all' ? undefined : filterCycleId);
   }, [filterCycleId, activeCycle]);
 
-  // Financial calculations
-  const totalExpense = allExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-  const totalIncome = allIncome.reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
-  const netProfit = totalIncome - totalExpense;
-  const profitMargin = totalIncome > 0 ? ((netProfit / totalIncome) * 100).toFixed(1) : '0';
+  // 1. Separate Operational Expenses (Cycle Variable Cost) from Capital/Equipment Expenses (Assets)
+  const operationalExpenses = useMemo(() => {
+    return allExpenses.filter(e => e.category !== 'alat_perlengkapan');
+  }, [allExpenses]);
 
-  // Cost per plant calculation if cycle selected
+  const capitalExpenses = useMemo(() => {
+    return allExpenses.filter(e => e.category === 'alat_perlengkapan');
+  }, [allExpenses]);
+
+  const totalOperationalExpense = operationalExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const totalCapitalExpense = capitalExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const totalExpense = totalOperationalExpense + totalCapitalExpense; // Total Arus Kas Keluar
+
+  const totalIncome = allIncome.reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+  
+  // Operational Profit (Based purely on Operational HPP)
+  const operationalProfit = totalIncome - totalOperationalExpense;
+  const operationalProfitMargin = totalIncome > 0 ? ((operationalProfit / totalIncome) * 100).toFixed(1) : '0';
+
+  // Net Cash Flow (After all cash expenses including tool purchases)
+  const netCashFlow = totalIncome - totalExpense;
+
+  // Cost per plant calculation based STRICTLY on Operational Expenses
   const activeCycleData = filterCycleId !== 'all' ? cycles.find(c => c.id === filterCycleId) : activeCycle;
   const plantCount = activeCycleData?.plantCount || 1;
-  const costPerPlant = Math.round(totalExpense / plantCount);
+  const costPerPlant = Math.round(totalOperationalExpense / plantCount);
 
-  // Expense breakdown by category
-  const expenseByCategory = useMemo(() => {
+  // Operational breakdown by category (for HPP)
+  const operationalByCategory = useMemo(() => {
     const cats: Record<string, number> = {};
-    allExpenses.forEach(e => {
+    operationalExpenses.forEach(e => {
       cats[e.category] = (cats[e.category] || 0) + (Number(e.amount) || 0);
     });
     return cats;
-  }, [allExpenses]);
+  }, [operationalExpenses]);
+
+  // Filtered expense list for tab 2
+  const displayedExpenses = useMemo(() => {
+    if (expenseFilterType === 'operational') return operationalExpenses;
+    if (expenseFilterType === 'capital') return capitalExpenses;
+    return allExpenses;
+  }, [expenseFilterType, allExpenses, operationalExpenses, capitalExpenses]);
 
   // Handle Edit & Delete Expense
   const handleSaveEditedExpense = (e: React.FormEvent) => {
@@ -93,6 +124,19 @@ export const FinanceManager: React.FC = () => {
     setIncomeToDelete(null);
   };
 
+  const categoryLabels: Record<string, string> = {
+    bibit: 'Bibit & Benih',
+    pupuk: 'Pupuk Kimia & Organik',
+    pestisida: 'Pestisida & Obat-obatan',
+    alat_perlengkapan: 'Alat & Perlengkapan Bedengan (Aset)',
+    tenaga_kerja: 'Upah Tenaga Kerja & Harian',
+    air_irigasi: 'Air & Pengairan',
+    listrik_bbm: 'Listrik & BBM Pompa',
+    transportasi: 'Transportasi & Pengangkutan',
+    sewa_lahan: 'Sewa Lahan & Fasilitas',
+    lainnya: 'Biaya Operasional Lainnya'
+  };
+
   return (
     <div className="space-y-5">
       
@@ -103,24 +147,24 @@ export const FinanceManager: React.FC = () => {
             <div className="flex items-center gap-2">
               <Wallet className="w-5 h-5 text-emerald-700" />
               <h2 className="text-base sm:text-lg font-bold text-slate-800">
-                Laporan Keuangan & Analisa Usaha Tani
+                Laporan Keuangan & Analisa HPP Usaha Tani
               </h2>
             </div>
             <p className="text-xs text-gray-500 mt-0.5">
-              Pencatatan arus kas riil, HPP per tanaman, dan kalkulasi laba-rugi budidaya.
+              Pemisahan Biaya Operasional (HPP per Pohon) vs Belanja Alat & Perlengkapan (Aset Berulang).
             </p>
           </div>
 
           <div className="flex items-center gap-2">
             <button
               onClick={() => openQuickAction('add_expense')}
-              className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold flex items-center gap-1.5 border border-rose-200 cursor-pointer"
+              className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold flex items-center gap-1.5 border border-rose-200 cursor-pointer shadow-2xs transition-colors"
             >
               <ArrowDownRight className="w-3.5 h-3.5" /> + Catat Biaya
             </button>
             <button
               onClick={() => openQuickAction('add_income')}
-              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs cursor-pointer"
+              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors"
             >
               <ArrowUpRight className="w-3.5 h-3.5" /> + Catat Penjualan
             </button>
@@ -145,8 +189,8 @@ export const FinanceManager: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. SUMMARY FINANCIAL METRICS */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      {/* 2. SUMMARY FINANCIAL METRICS WITH SEPARATION OF TOOLS VS OPERATIONAL */}
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
         
         {/* Total Income */}
         <div className="bg-white border border-[#e9ece6] rounded-2xl p-4 shadow-xs">
@@ -154,53 +198,72 @@ export const FinanceManager: React.FC = () => {
             <span className="font-medium">Total Pendapatan</span>
             <ArrowUpRight className="w-4 h-4 text-emerald-600" />
           </div>
-          <div className="text-xl sm:text-2xl font-bold text-emerald-800 font-mono">
+          <div className="text-lg sm:text-xl font-bold text-emerald-800 font-mono">
             Rp {totalIncome.toLocaleString('id-ID')}
           </div>
           <div className="text-[11px] text-gray-400 mt-2">
-            Dari {allIncome.length} transaksi penjualan
+            Dari {allIncome.length} transaksi panen
           </div>
         </div>
 
-        {/* Total Expenses */}
-        <div className="bg-white border border-[#e9ece6] rounded-2xl p-4 shadow-xs">
-          <div className="flex items-center justify-between text-gray-500 text-xs mb-1">
-            <span className="font-medium">Total Pengeluaran (Beban)</span>
-            <ArrowDownRight className="w-4 h-4 text-rose-600" />
+        {/* Operational Expense (HPP Component) */}
+        <div className="bg-white border border-rose-200/80 rounded-2xl p-4 shadow-xs bg-rose-50/20">
+          <div className="flex items-center justify-between text-rose-900 text-xs mb-1">
+            <span className="font-bold flex items-center gap-1">
+              <Sprout className="w-3.5 h-3.5 text-rose-600" />
+              Biaya Operasional (HPP)
+            </span>
           </div>
-          <div className="text-xl sm:text-2xl font-bold text-rose-700 font-mono">
-            Rp {totalExpense.toLocaleString('id-ID')}
-          </div>
-          <div className="text-[11px] text-gray-400 mt-2">
-            Saprotan, tenaga kerja, operasional
-          </div>
-        </div>
-
-        {/* Net Profit / Loss */}
-        <div className="bg-white border border-[#e9ece6] rounded-2xl p-4 shadow-xs">
-          <div className="flex items-center justify-between text-gray-500 text-xs mb-1">
-            <span className="font-medium">Laba / (Rugi) Bersih</span>
-            <TrendingUp className={`w-4 h-4 ${netProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`} />
-          </div>
-          <div className={`text-xl sm:text-2xl font-bold font-mono ${netProfit >= 0 ? 'text-emerald-800' : 'text-rose-700'}`}>
-            Rp {netProfit.toLocaleString('id-ID')}
+          <div className="text-lg sm:text-xl font-bold text-rose-700 font-mono">
+            Rp {totalOperationalExpense.toLocaleString('id-ID')}
           </div>
           <div className="text-[11px] text-gray-500 mt-2">
-            Margin: <strong className="text-slate-800">{profitMargin}%</strong>
+            Saprotan, pupuk & upah harian
           </div>
         </div>
 
-        {/* Cost Per Plant (HPP) */}
-        <div className="bg-white border border-[#e9ece6] rounded-2xl p-4 shadow-xs">
-          <div className="flex items-center justify-between text-gray-500 text-xs mb-1">
-            <span className="font-medium">HPP per Pohon Tanaman</span>
-            <span className="text-gray-400 text-xs font-mono">HPP</span>
+        {/* Capital Expense / Tools (Non-HPP) */}
+        <div className="bg-white border border-sky-200 rounded-2xl p-4 shadow-xs bg-sky-50/20">
+          <div className="flex items-center justify-between text-sky-900 text-xs mb-1">
+            <span className="font-bold flex items-center gap-1">
+              <Wrench className="w-3.5 h-3.5 text-sky-600" />
+              Alat & Perlengkapan
+            </span>
+            <span className="text-[9px] bg-sky-100 text-sky-800 font-bold px-1.5 py-0.5 rounded">Aset</span>
           </div>
-          <div className="text-xl sm:text-2xl font-bold text-slate-800 font-mono">
+          <div className="text-lg sm:text-xl font-bold text-sky-800 font-mono">
+            Rp {totalCapitalExpense.toLocaleString('id-ID')}
+          </div>
+          <div className="text-[11px] text-sky-700/80 mt-2">
+            Aset berulang (Non-HPP Pohon)
+          </div>
+        </div>
+
+        {/* Cost Per Plant (Accurate HPP) */}
+        <div className="bg-white border border-emerald-300 rounded-2xl p-4 shadow-xs bg-emerald-50/30">
+          <div className="flex items-center justify-between text-emerald-950 text-xs mb-1">
+            <span className="font-bold">HPP per Pohon Tanaman</span>
+            <span className="text-emerald-800 text-[10px] font-mono font-bold bg-emerald-100 px-1.5 py-0.5 rounded">HPP Murni</span>
+          </div>
+          <div className="text-xl sm:text-2xl font-bold text-emerald-900 font-mono">
             Rp {costPerPlant.toLocaleString('id-ID')}
           </div>
-          <div className="text-[11px] text-gray-400 mt-2">
-            Berdasarkan {plantCount.toLocaleString('id-ID')} populasi
+          <div className="text-[11px] text-emerald-800/80 mt-2 font-medium">
+            {plantCount.toLocaleString('id-ID')} populasi bibit
+          </div>
+        </div>
+
+        {/* Operational Profit */}
+        <div className="bg-white border border-[#e9ece6] rounded-2xl p-4 shadow-xs col-span-2 sm:col-span-2 lg:col-span-1">
+          <div className="flex items-center justify-between text-gray-500 text-xs mb-1">
+            <span className="font-medium">Laba Siklus (Operasional)</span>
+            <TrendingUp className={`w-4 h-4 ${operationalProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`} />
+          </div>
+          <div className={`text-lg sm:text-xl font-bold font-mono ${operationalProfit >= 0 ? 'text-emerald-800' : 'text-rose-700'}`}>
+            Rp {operationalProfit.toLocaleString('id-ID')}
+          </div>
+          <div className="text-[11px] text-gray-500 mt-2">
+            Margin: <strong className="text-slate-800">{operationalProfitMargin}%</strong>
           </div>
         </div>
 
@@ -217,7 +280,7 @@ export const FinanceManager: React.FC = () => {
               activeTab === 'overview' ? 'bg-emerald-700 text-white' : 'bg-[#f3f5f0] text-slate-600 hover:bg-[#e9ece6]'
             }`}
           >
-            Struktur Biaya
+            Struktur Biaya & HPP
           </button>
           <button
             onClick={() => setActiveTab('expenses')}
@@ -239,96 +302,227 @@ export const FinanceManager: React.FC = () => {
 
         {/* TAB 1: OVERVIEW & BREAKDOWN BARS */}
         {activeTab === 'overview' && (
-          <div className="space-y-4">
-            <h3 className="font-bold text-sm text-slate-800">Distribusi Beban Biaya Produksi (Berdasarkan Kategori)</h3>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {Object.entries(expenseByCategory).map(([cat, amount]) => {
-                const numAmount = Number(amount) || 0;
-                const percent = totalExpense > 0 ? Math.round((numAmount / totalExpense) * 100) : 0;
-                const labels: Record<string, string> = {
-                  bibit: 'Bibit & Benih',
-                  pupuk: 'Pupuk Kimia & Organik',
-                  pestisida: 'Pestisida & Obat-obatan',
-                  alat_perlengkapan: 'Alat & Perlengkapan Bedengan',
-                  tenaga_kerja: 'Upah Tenaga Kerja & Harian',
-                  air_irigasi: 'Air & Pengairan',
-                  listrik_bbm: 'Listrik & BBM Pompa',
-                  transportasi: 'Transportasi & Pengangkutan',
-                  sewa_lahan: 'Sewa Lahan & Fasilitas',
-                  lainnya: 'Biaya Lain-lain'
-                };
-
-                return (
-                  <div key={cat} className="p-3.5 bg-[#f9faf8] rounded-xl border border-[#e1e5db] space-y-1.5">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-medium text-slate-800">{labels[cat] || cat}</span>
-                      <span className="font-mono font-bold text-slate-800">Rp {numAmount.toLocaleString('id-ID')}</span>
-                    </div>
-
-                    <div className="w-full bg-[#e9ece6] rounded-full h-2 overflow-hidden">
-                      <div className="bg-emerald-600 h-full rounded-full" style={{ width: `${percent}%` }} />
-                    </div>
-
-                    <div className="text-[10px] text-gray-500 flex justify-between">
-                      <span>Porsi Total Biaya</span>
-                      <span className="font-mono font-semibold text-emerald-700">{percent}%</span>
-                    </div>
-                  </div>
-                );
-              })}
+          <div className="space-y-6">
+            
+            {/* Notice / Policy Explanation */}
+            <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3.5 flex items-start gap-2.5 text-xs text-emerald-950">
+              <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
+              <div>
+                <strong className="font-bold text-emerald-900">Kebijakan Pemisahan Akuntansi Pertanian:</strong>
+                <p className="text-[11px] text-emerald-800 mt-0.5">
+                  Pengeluaran kategori <strong>Alat & Perlengkapan Bedengan</strong> (seperti pompa, selang drip, sprayer, paranet, cangkul) dikelompokkan sebagai <strong>Aset Tetap / Modal Usaha</strong> yang digunakan berulang lintas siklus. Kategori ini <strong>tidak dimasukkan ke dalam HPP per Pohon Tanaman</strong> sehingga nilai HPP per pohon mencerminkan biaya produksi riil tanpa distorsi.
+                </p>
+              </div>
             </div>
+
+            {/* Section A: Biaya Operasional (HPP) */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-xs sm:text-sm text-slate-800 flex items-center gap-1.5">
+                  <Sprout className="w-4 h-4 text-emerald-700" />
+                  1. Rincian Biaya Operasional Siklus (Komponen HPP per Pohon)
+                </h3>
+                <span className="text-xs font-mono font-bold text-rose-700">
+                  Total: Rp {totalOperationalExpense.toLocaleString('id-ID')}
+                </span>
+              </div>
+
+              {Object.keys(operationalByCategory).length === 0 ? (
+                <div className="p-6 text-center text-xs text-gray-500 bg-[#f9faf8] rounded-xl border border-dashed border-[#e1e5db]">
+                  Belum ada catatan biaya operasional untuk filter ini.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  {Object.entries(operationalByCategory).map(([cat, amount]) => {
+                    const numAmount = Number(amount) || 0;
+                    const percent = totalOperationalExpense > 0 ? Math.round((numAmount / totalOperationalExpense) * 100) : 0;
+                    const costPerPlantPortion = Math.round(numAmount / plantCount);
+
+                    return (
+                      <div key={cat} className="p-3.5 bg-[#f9faf8] rounded-xl border border-[#e1e5db] space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-slate-800">{categoryLabels[cat] || cat}</span>
+                          <span className="font-mono font-bold text-slate-800">Rp {numAmount.toLocaleString('id-ID')}</span>
+                        </div>
+
+                        <div className="w-full bg-[#e9ece6] rounded-full h-2 overflow-hidden">
+                          <div className="bg-emerald-600 h-full rounded-full" style={{ width: `${percent}%` }} />
+                        </div>
+
+                        <div className="text-[10px] text-gray-500 flex justify-between">
+                          <span>Kontribusi ke HPP: <strong className="text-slate-700 font-mono">Rp {costPerPlantPortion.toLocaleString('id-ID')}/pohon</strong></span>
+                          <span className="font-mono font-bold text-emerald-700">{percent}%</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Section B: Investasi Alat & Perlengkapan (Aset Berulang / Non-HPP) */}
+            <div className="space-y-3 pt-4 border-t border-[#e9ece6]">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-xs sm:text-sm text-slate-800 flex items-center gap-1.5">
+                    <Wrench className="w-4 h-4 text-sky-700" />
+                    2. Investasi Alat & Perlengkapan Bedengan (Aset Berulang / Non-HPP)
+                  </h3>
+                  <p className="text-[11px] text-gray-500">
+                    Peralatan yang memiliki masa pakai panjang & dapat digunakan kembali untuk siklus-siklus berikutnya.
+                  </p>
+                </div>
+                <span className="text-xs font-mono font-bold text-sky-800 bg-sky-50 px-2 py-1 rounded-lg border border-sky-200">
+                  Total Aset: Rp {totalCapitalExpense.toLocaleString('id-ID')}
+                </span>
+              </div>
+
+              {capitalExpenses.length === 0 ? (
+                <div className="p-4 text-center text-xs text-gray-500 bg-[#f9faf8] rounded-xl border border-[#e1e5db]">
+                  Tidak ada pengeluaran alat & perlengkapan pada siklus ini.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {capitalExpenses.map(item => (
+                    <div key={item.id} className="p-3 bg-sky-50/40 rounded-xl border border-sky-200 space-y-1 text-xs">
+                      <div className="flex items-center justify-between font-bold text-slate-800">
+                        <span>{item.description}</span>
+                        <span className="font-mono text-sky-800">Rp {item.amount.toLocaleString('id-ID')}</span>
+                      </div>
+                      <div className="text-[10px] text-gray-500 flex justify-between pt-1 border-t border-sky-100">
+                        <span>Tgl Beli: {item.date}</span>
+                        <span className="text-sky-700 font-medium">Aset Kebun</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Total Cash Summary */}
+            <div className="p-4 bg-[#f8faf6] rounded-xl border border-[#e1e5db] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+              <div>
+                <span className="text-gray-600">Total Pengeluaran Kas Fisik (Operasional + Belanja Alat):</span>
+                <span className="font-mono font-bold text-slate-800 ml-2">Rp {totalExpense.toLocaleString('id-ID')}</span>
+              </div>
+              <div>
+                <span className="text-gray-600">Arus Kas Bersih Usaha:</span>
+                <span className={`font-mono font-bold ml-2 ${netCashFlow >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                  Rp {netCashFlow.toLocaleString('id-ID')}
+                </span>
+              </div>
+            </div>
+
           </div>
         )}
 
-        {/* TAB 2: EXPENSES TABLE */}
+        {/* TAB 2: EXPENSES TABLE WITH FILTER TYPE */}
         {activeTab === 'expenses' && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left text-slate-700">
-              <thead className="text-[11px] text-gray-500 uppercase bg-[#f9faf8] border-b border-[#e9ece6]">
-                <tr>
-                  <th className="px-4 py-2.5">Tanggal</th>
-                  <th className="px-4 py-2.5">Kategori</th>
-                  <th className="px-4 py-2.5">Keterangan / Keperluan</th>
-                  <th className="px-4 py-2.5">Total Biaya</th>
-                  <th className="px-4 py-2.5">Catatan</th>
-                  <th className="px-4 py-2.5 text-right">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#e9ece6] font-mono">
-                {allExpenses.map((exp) => (
-                  <tr key={exp.id} className="hover:bg-[#f9faf8]">
-                    <td className="px-4 py-3 font-sans text-gray-500">{exp.date}</td>
-                    <td className="px-4 py-3 font-sans capitalize">
-                      <span className="px-2 py-0.5 rounded bg-[#f3f5f0] border border-[#e1e5db] text-[10px] text-slate-700">
-                        {exp.category}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 font-sans font-medium text-slate-800">{exp.description}</td>
-                    <td className="px-4 py-3 font-bold text-rose-700">Rp {exp.amount.toLocaleString('id-ID')}</td>
-                    <td className="px-4 py-3 font-sans text-gray-500 max-w-[160px] truncate">{exp.notes || '-'}</td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={() => setEditingExpense({ ...exp })}
-                          className="p-1 rounded-lg bg-[#f3f5f0] hover:bg-[#e9ece6] text-slate-700 border border-[#e1e5db] cursor-pointer shadow-2xs transition-colors"
-                          title="Edit Catatan Pengeluaran"
-                        >
-                          <Edit className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => setExpenseToDelete(exp)}
-                          className="p-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 cursor-pointer shadow-2xs transition-colors"
-                          title="Hapus Catatan Pengeluaran"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
+          <div className="space-y-3">
+            
+            {/* Sub-filter chips */}
+            <div className="flex items-center gap-2 text-xs pb-1">
+              <span className="text-gray-500 text-[11px] font-medium">Tampilkan:</span>
+              <button
+                onClick={() => setExpenseFilterType('all')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+                  expenseFilterType === 'all'
+                    ? 'bg-slate-800 text-white'
+                    : 'bg-[#f3f5f0] text-slate-700 hover:bg-[#e9ece6]'
+                }`}
+              >
+                Semua ({allExpenses.length})
+              </button>
+              <button
+                onClick={() => setExpenseFilterType('operational')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1 ${
+                  expenseFilterType === 'operational'
+                    ? 'bg-emerald-700 text-white'
+                    : 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100'
+                }`}
+              >
+                <Sprout className="w-3 h-3" /> Biaya Operasional / HPP ({operationalExpenses.length})
+              </button>
+              <button
+                onClick={() => setExpenseFilterType('capital')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1 ${
+                  expenseFilterType === 'capital'
+                    ? 'bg-sky-700 text-white'
+                    : 'bg-sky-50 text-sky-800 border border-sky-200 hover:bg-sky-100'
+                }`}
+              >
+                <Wrench className="w-3 h-3" /> Alat & Perlengkapan / Aset ({capitalExpenses.length})
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left text-slate-700">
+                <thead className="text-[11px] text-gray-500 uppercase bg-[#f9faf8] border-b border-[#e9ece6]">
+                  <tr>
+                    <th className="px-4 py-2.5">Tanggal</th>
+                    <th className="px-4 py-2.5">Kategori</th>
+                    <th className="px-4 py-2.5">Peruntukan HPP</th>
+                    <th className="px-4 py-2.5">Keterangan / Keperluan</th>
+                    <th className="px-4 py-2.5">Total Biaya</th>
+                    <th className="px-4 py-2.5">Catatan</th>
+                    <th className="px-4 py-2.5 text-right">Aksi</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-[#e9ece6] font-mono">
+                  {displayedExpenses.map((exp) => {
+                    const isTool = exp.category === 'alat_perlengkapan';
+                    return (
+                      <tr key={exp.id} className="hover:bg-[#f9faf8]">
+                        <td className="px-4 py-3 font-sans text-gray-500">{exp.date}</td>
+                        <td className="px-4 py-3 font-sans capitalize">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${
+                            isTool
+                              ? 'bg-sky-50 text-sky-900 border-sky-200'
+                              : 'bg-[#f3f5f0] border-[#e1e5db] text-slate-700'
+                          }`}>
+                            {categoryLabels[exp.category] || exp.category}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-sans">
+                          {isTool ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200">
+                              Non-HPP (Aset)
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-900 border border-emerald-200">
+                              Masuk HPP Pohon
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 font-sans font-medium text-slate-800">{exp.description}</td>
+                        <td className={`px-4 py-3 font-bold ${isTool ? 'text-sky-800' : 'text-rose-700'}`}>
+                          Rp {exp.amount.toLocaleString('id-ID')}
+                        </td>
+                        <td className="px-4 py-3 font-sans text-gray-500 max-w-[160px] truncate">{exp.notes || '-'}</td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => setEditingExpense({ ...exp })}
+                              className="p-1 rounded-lg bg-[#f3f5f0] hover:bg-[#e9ece6] text-slate-700 border border-[#e1e5db] cursor-pointer shadow-2xs transition-colors"
+                              title="Edit Catatan Pengeluaran"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => setExpenseToDelete(exp)}
+                              className="p-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 cursor-pointer shadow-2xs transition-colors"
+                              title="Hapus Catatan Pengeluaran"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
@@ -426,7 +620,7 @@ export const FinanceManager: React.FC = () => {
                     <option value="bibit">Bibit & Benih</option>
                     <option value="pupuk">Pupuk</option>
                     <option value="pestisida">Pestisida</option>
-                    <option value="alat_perlengkapan">Alat & Perlengkapan</option>
+                    <option value="alat_perlengkapan">Alat & Perlengkapan (Aset)</option>
                     <option value="tenaga_kerja">Upah Tenaga Kerja</option>
                     <option value="air_irigasi">Air Irigasi</option>
                     <option value="listrik_bbm">Listrik & BBM</option>
@@ -436,6 +630,12 @@ export const FinanceManager: React.FC = () => {
                   </select>
                 </div>
               </div>
+
+              {editingExpense.category === 'alat_perlengkapan' && (
+                <div className="p-2.5 bg-sky-50 border border-sky-200 rounded-xl text-[11px] text-sky-900">
+                  ℹ️ Pengeluaran ini dicatat sebagai <strong>Aset Alat</strong> dan tidak akan membebani HPP per pohon tanaman.
+                </div>
+              )}
 
               <div>
                 <label className="block text-gray-600 mb-1 font-medium">Keterangan / Keperluan</label>
@@ -449,7 +649,7 @@ export const FinanceManager: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-gray-600 mb-1 font-medium">Total Biaya (Rp)</label>
+                <label className="block text-gray-600 mb-1 font-medium">Nominal (Rp)</label>
                 <input
                   type="number"
                   value={editingExpense.amount}
@@ -469,17 +669,17 @@ export const FinanceManager: React.FC = () => {
                 />
               </div>
 
-              <div className="pt-2 flex justify-end gap-2 border-t border-[#e9ece6]">
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#e9ece6]">
                 <button
                   type="button"
                   onClick={() => setEditingExpense(null)}
-                  className="px-3.5 py-1.5 rounded-lg bg-[#f3f5f0] text-slate-700 hover:bg-[#e9ece6] cursor-pointer"
+                  className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 font-semibold text-white cursor-pointer shadow-xs"
+                  className="px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-semibold cursor-pointer shadow-xs"
                 >
                   Simpan Perubahan
                 </button>
@@ -489,42 +689,31 @@ export const FinanceManager: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL: DELETE EXPENSE CONFIRMATION */}
+      {/* MODAL: DELETE EXPENSE */}
       {expenseToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/40 backdrop-blur-xs">
-          <div className="bg-white border border-[#e9ece6] rounded-2xl w-full max-w-sm p-5 text-slate-800 text-xs shadow-xl space-y-4">
-            <div className="flex items-center gap-3 text-rose-700">
-              <div className="w-10 h-10 rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center shrink-0">
-                <Trash2 className="w-5 h-5 text-rose-600" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-slate-800">Hapus Catatan Biaya</h3>
-                <p className="text-[11px] text-gray-500">Mencegah data salah input</p>
-              </div>
+          <div className="bg-white border border-[#e9ece6] rounded-2xl w-full max-w-sm p-5 text-slate-800 text-xs shadow-xl space-y-3">
+            <div className="flex items-center gap-2 text-rose-700 font-bold text-sm">
+              <AlertCircle className="w-5 h-5" />
+              Hapus Pengeluaran?
             </div>
-
-            <div className="p-3 bg-rose-50/70 border border-rose-200 rounded-xl space-y-1 text-slate-700">
-              <p>Apakah Anda yakin ingin menghapus data pengeluaran ini?</p>
-              <div className="font-bold text-slate-800 text-xs mt-1">{expenseToDelete.description}</div>
-              <div className="text-[11px] text-rose-700 font-mono font-bold">
-                Rp {expenseToDelete.amount.toLocaleString('id-ID')} ({expenseToDelete.date})
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2">
+            <p className="text-gray-600">
+              Apakah Anda yakin ingin menghapus catatan pengeluaran <strong className="text-slate-800 font-bold">{expenseToDelete.description}</strong> sebesar <strong className="text-rose-700 font-mono">Rp {expenseToDelete.amount.toLocaleString('id-ID')}</strong>?
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#e9ece6]">
               <button
                 type="button"
                 onClick={() => setExpenseToDelete(null)}
-                className="px-3.5 py-1.5 rounded-lg bg-[#f3f5f0] text-slate-700 hover:bg-[#e9ece6] cursor-pointer font-medium"
+                className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold cursor-pointer"
               >
                 Batal
               </button>
               <button
                 type="button"
                 onClick={handleConfirmDeleteExpense}
-                className="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-semibold cursor-pointer shadow-xs transition-colors"
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold cursor-pointer shadow-xs"
               >
-                Ya, Hapus Data
+                Hapus
               </button>
             </div>
           </div>
@@ -561,53 +750,69 @@ export const FinanceManager: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-gray-600 mb-1 font-medium">Status Pembayaran</label>
+                  <label className="block text-gray-600 mb-1 font-medium">Sumber / Kategori</label>
                   <select
-                    value={editingIncome.paymentStatus}
-                    onChange={e => setEditingIncome({ ...editingIncome, paymentStatus: e.target.value as any })}
-                    className="w-full bg-[#f9faf8] border border-[#e1e5db] rounded-xl px-3 py-2 text-slate-800 focus:outline-emerald-600 focus:bg-white font-semibold"
+                    value={editingIncome.source}
+                    onChange={e => setEditingIncome({ ...editingIncome, source: e.target.value as any })}
+                    className="w-full bg-[#f9faf8] border border-[#e1e5db] rounded-xl px-3 py-2 text-slate-800 focus:outline-emerald-600 focus:bg-white"
                   >
-                    <option value="paid">LUNAS (Diterima)</option>
-                    <option value="pending">TEMPO / Belum Lunas</option>
+                    <option value="harvest_sale">Penjualan Hasil Panen</option>
+                    <option value="seedling_sale">Penjualan Bibit</option>
+                    <option value="byproduct">Hasil Olahan / Sampingan</option>
+                    <option value="subsidy">Subsidi / Bantuan</option>
+                    <option value="other">Lain-lain</option>
                   </select>
                 </div>
               </div>
 
               <div>
-                <label className="block text-gray-600 mb-1 font-medium">Nama Pembeli / Pihak Pembayar</label>
+                <label className="block text-gray-600 mb-1 font-medium">Nama Pembeli / Tengkulak / Kios</label>
                 <input
                   type="text"
                   value={editingIncome.buyerName || ''}
                   onChange={e => setEditingIncome({ ...editingIncome, buyerName: e.target.value })}
-                  placeholder="Contoh: Pak Haji Bandi (Pasar Induk)"
+                  placeholder="Contoh: Pak Haji Anwar (Pasar Induk)"
                   className="w-full bg-[#f9faf8] border border-[#e1e5db] rounded-xl px-3 py-2 text-slate-800 font-semibold focus:outline-emerald-600 focus:bg-white"
                 />
               </div>
 
               <div>
-                <label className="block text-gray-600 mb-1 font-medium">Keterangan Penjualan / Komoditas</label>
+                <label className="block text-gray-600 mb-1 font-medium">Keterangan / Rincian Penjualan</label>
                 <input
                   type="text"
                   value={editingIncome.description}
                   onChange={e => setEditingIncome({ ...editingIncome, description: e.target.value })}
-                  className="w-full bg-[#f9faf8] border border-[#e1e5db] rounded-xl px-3 py-2 text-slate-800 font-semibold focus:outline-emerald-600 focus:bg-white"
+                  className="w-full bg-[#f9faf8] border border-[#e1e5db] rounded-xl px-3 py-2 text-slate-800 focus:outline-emerald-600 focus:bg-white"
                   required
                 />
               </div>
 
-              <div>
-                <label className="block text-gray-600 mb-1 font-medium">Total Nominal (Rp)</label>
-                <input
-                  type="number"
-                  value={editingIncome.amount}
-                  onChange={e => setEditingIncome({ ...editingIncome, amount: Number(e.target.value) })}
-                  className="w-full bg-[#f9faf8] border border-[#e1e5db] rounded-xl px-3 py-2 text-slate-800 font-mono font-bold focus:outline-emerald-600 focus:bg-white"
-                  required
-                />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-gray-600 mb-1 font-medium">Nominal Total (Rp)</label>
+                  <input
+                    type="number"
+                    value={editingIncome.amount}
+                    onChange={e => setEditingIncome({ ...editingIncome, amount: Number(e.target.value) })}
+                    className="w-full bg-[#f9faf8] border border-[#e1e5db] rounded-xl px-3 py-2 text-slate-800 font-mono font-bold focus:outline-emerald-600 focus:bg-white"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-600 mb-1 font-medium">Status Pembayaran</label>
+                  <select
+                    value={editingIncome.paymentStatus}
+                    onChange={e => setEditingIncome({ ...editingIncome, paymentStatus: e.target.value as any })}
+                    className="w-full bg-[#f9faf8] border border-[#e1e5db] rounded-xl px-3 py-2 text-slate-800 font-semibold focus:outline-emerald-600 focus:bg-white"
+                  >
+                    <option value="paid">LUNAS (Cash / Transfer)</option>
+                    <option value="pending">TEMPO (Hutang Dagang)</option>
+                  </select>
+                </div>
               </div>
 
               <div>
-                <label className="block text-gray-600 mb-1 font-medium">Catatan Kualitas / Timbangan</label>
+                <label className="block text-gray-600 mb-1 font-medium">Catatan Tambahan (Opsional)</label>
                 <textarea
                   value={editingIncome.notes || ''}
                   onChange={e => setEditingIncome({ ...editingIncome, notes: e.target.value })}
@@ -616,17 +821,17 @@ export const FinanceManager: React.FC = () => {
                 />
               </div>
 
-              <div className="pt-2 flex justify-end gap-2 border-t border-[#e9ece6]">
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#e9ece6]">
                 <button
                   type="button"
                   onClick={() => setEditingIncome(null)}
-                  className="px-3.5 py-1.5 rounded-lg bg-[#f3f5f0] text-slate-700 hover:bg-[#e9ece6] cursor-pointer"
+                  className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 font-semibold text-white cursor-pointer shadow-xs"
+                  className="px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-semibold cursor-pointer shadow-xs"
                 >
                   Simpan Perubahan
                 </button>
@@ -636,42 +841,31 @@ export const FinanceManager: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL: DELETE INCOME CONFIRMATION */}
+      {/* MODAL: DELETE INCOME */}
       {incomeToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/40 backdrop-blur-xs">
-          <div className="bg-white border border-[#e9ece6] rounded-2xl w-full max-w-sm p-5 text-slate-800 text-xs shadow-xl space-y-4">
-            <div className="flex items-center gap-3 text-rose-700">
-              <div className="w-10 h-10 rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center shrink-0">
-                <Trash2 className="w-5 h-5 text-rose-600" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-slate-800">Hapus Catatan Penjualan</h3>
-                <p className="text-[11px] text-gray-500">Mencegah data salah input</p>
-              </div>
+          <div className="bg-white border border-[#e9ece6] rounded-2xl w-full max-w-sm p-5 text-slate-800 text-xs shadow-xl space-y-3">
+            <div className="flex items-center gap-2 text-rose-700 font-bold text-sm">
+              <AlertCircle className="w-5 h-5" />
+              Hapus Pemasukan?
             </div>
-
-            <div className="p-3 bg-rose-50/70 border border-rose-200 rounded-xl space-y-1 text-slate-700">
-              <p>Apakah Anda yakin ingin menghapus data penjualan/pemasukan ini?</p>
-              <div className="font-bold text-slate-800 text-xs mt-1">{incomeToDelete.description}</div>
-              <div className="text-[11px] text-emerald-800 font-mono font-bold">
-                Rp {incomeToDelete.amount.toLocaleString('id-ID')} ({incomeToDelete.date})
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2">
+            <p className="text-gray-600">
+              Apakah Anda yakin ingin menghapus catatan penjualan <strong className="text-slate-800 font-bold">{incomeToDelete.description}</strong> sebesar <strong className="text-emerald-700 font-mono">Rp {incomeToDelete.amount.toLocaleString('id-ID')}</strong>?
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#e9ece6]">
               <button
                 type="button"
                 onClick={() => setIncomeToDelete(null)}
-                className="px-3.5 py-1.5 rounded-lg bg-[#f3f5f0] text-slate-700 hover:bg-[#e9ece6] cursor-pointer font-medium"
+                className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold cursor-pointer"
               >
                 Batal
               </button>
               <button
                 type="button"
                 onClick={handleConfirmDeleteIncome}
-                className="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-semibold cursor-pointer shadow-xs transition-colors"
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold cursor-pointer shadow-xs"
               >
-                Ya, Hapus Data
+                Hapus
               </button>
             </div>
           </div>
@@ -681,3 +875,5 @@ export const FinanceManager: React.FC = () => {
     </div>
   );
 };
+
+export default FinanceManager;

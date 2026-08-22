@@ -1083,11 +1083,16 @@ export class ExcelService {
     const completedTasks = tasks.filter(t => t.status === 'completed');
     const taskComplianceRate = tasks.length > 0 ? Math.round((completedTasks.length / tasks.length) * 100) : 0;
     const totalExpense = expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const operationalExpenses = expenses.filter(e => e.category !== 'alat_perlengkapan');
+    const assetExpenses = expenses.filter(e => e.category === 'alat_perlengkapan');
+    const totalOperationalExpense = operationalExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const totalAssetExpense = assetExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
     const totalIncome = income.reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
     const netProfit = totalIncome - totalExpense;
     const totalHarvestKg = harvests.reduce((sum, h) => sum + (Number(h.totalWeightKg) || 0), 0);
     const plantCount = cycle.plantCount || 1;
-    const costPerPlant = Math.round(totalExpense / plantCount);
+    const costPerPlant = Math.round(totalOperationalExpense / plantCount);
     const revenuePerPlant = Math.round(totalIncome / plantCount);
     const yieldPerPlantGrams = totalHarvestKg > 0 ? Math.round((totalHarvestKg * 1000) / plantCount) : 0;
     const profitMargin = totalIncome > 0 ? ((netProfit / totalIncome) * 100).toFixed(1) : '0';
@@ -1106,13 +1111,15 @@ export class ExcelService {
       { Indikator: 'Estimasi Panen', Nilai: cycle.estimatedHarvestDate || '-' },
       { Indikator: 'Versi SOP Snapshot', Nilai: cycle.sopSnapshot?.versionNumber || 'V1.0' },
       { Indikator: 'Kepatuhan SOP (Compliance Rate)', Nilai: `${taskComplianceRate}% (${completedTasks.length} dari ${tasks.length} tugas selesai)` },
-      { Indikator: 'Total Pengeluaran / Beban Biaya (Rp)', Nilai: `Rp ${totalExpense.toLocaleString('id-ID')}` },
+      { Indikator: 'Total Biaya Operasional / HPP Siklus (Rp)', Nilai: `Rp ${totalOperationalExpense.toLocaleString('id-ID')}` },
+      { Indikator: 'Total Belanja Aset / Alat & Perlengkapan (Rp)', Nilai: `Rp ${totalAssetExpense.toLocaleString('id-ID')}` },
+      { Indikator: 'Total Pengeluaran Keseluruhan (Rp)', Nilai: `Rp ${totalExpense.toLocaleString('id-ID')}` },
       { Indikator: 'Total Pendapatan / Penjualan (Rp)', Nilai: `Rp ${totalIncome.toLocaleString('id-ID')}` },
       { Indikator: 'Laba / (Rugi) Bersih (Rp)', Nilai: `Rp ${netProfit.toLocaleString('id-ID')}` },
       { Indikator: 'Margin Keuntungan', Nilai: `${profitMargin}%` },
       { Indikator: 'Total Hasil Panen (kg)', Nilai: `${totalHarvestKg.toLocaleString('id-ID')} kg` },
       { Indikator: 'Produktivitas Rata-rata per Pohon', Nilai: `${yieldPerPlantGrams} gram / pohon` },
-      { Indikator: 'HPP per Tanaman', Nilai: `Rp ${costPerPlant.toLocaleString('id-ID')} / pohon` },
+      { Indikator: 'HPP Operasional per Tanaman', Nilai: `Rp ${costPerPlant.toLocaleString('id-ID')} / pohon` },
       { Indikator: 'Pendapatan per Tanaman', Nilai: `Rp ${revenuePerPlant.toLocaleString('id-ID')} / pohon` },
       { Indikator: 'Tanggal Laporan Dibuat', Nilai: new Date().toLocaleString('id-ID') }
     ];
@@ -1140,6 +1147,7 @@ export class ExcelService {
     const expData = expenses.map((e, idx) => ({
       'No': idx + 1,
       'Tanggal': e.date,
+      'Tipe Akuntansi': e.category === 'alat_perlengkapan' ? 'ASET / ALAT' : 'OPERASIONAL (HPP)',
       'Kategori Biaya': e.category.toUpperCase(),
       'Deskripsi / Keperluan': e.description,
       'Nominal (Rp)': e.amount,

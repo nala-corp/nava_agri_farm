@@ -43,12 +43,17 @@ export const ReportsAnalytics: React.FC = () => {
   }, [selectedCycle]);
 
   const totalExpense = cycleExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const operationalExpenses = cycleExpenses.filter(e => e.category !== 'alat_perlengkapan');
+  const assetExpenses = cycleExpenses.filter(e => e.category === 'alat_perlengkapan');
+  const totalOperationalExpense = operationalExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const totalAssetExpense = assetExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
   const totalRevenue = cycleIncome.reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
   const netProfit = totalRevenue - totalExpense;
   const totalHarvestKg = cycleHarvests.reduce((sum, h) => sum + (Number(h.totalWeightKg) || 0), 0);
 
   const plantCount = selectedCycle?.plantCount || 1;
-  const costPerPlant = Math.round(totalExpense / plantCount);
+  const costPerPlant = Math.round(totalOperationalExpense / plantCount);
   const revenuePerPlant = Math.round(totalRevenue / plantCount);
   const yieldPerPlantGrams = totalHarvestKg > 0 ? Math.round((totalHarvestKg * 1000) / plantCount) : 0;
 
@@ -149,14 +154,17 @@ export const ReportsAnalytics: React.FC = () => {
             {/* Cost per Plant vs Revenue per Plant */}
             <div className="bg-white border border-[#e9ece6] rounded-2xl p-4 shadow-xs">
               <div className="flex items-center justify-between text-gray-500 text-xs mb-1">
-                <span className="font-medium">HPP vs Omset / Pohon</span>
+                <span className="font-medium">HPP Operasional / Pohon</span>
                 <Wallet className="w-4 h-4 text-teal-600" />
               </div>
               <div className="text-xl sm:text-2xl font-bold text-teal-800 font-mono">
-                Rp {revenuePerPlant.toLocaleString('id-ID')}
+                Rp {costPerPlant.toLocaleString('id-ID')}
               </div>
-              <div className="text-[11px] text-gray-400 mt-2">
-                HPP: Rp {costPerPlant.toLocaleString('id-ID')} / pohon
+              <div className="text-[11px] text-gray-500 mt-2 flex justify-between">
+                <span>Omset: Rp {revenuePerPlant.toLocaleString('id-ID')}</span>
+                {totalAssetExpense > 0 && (
+                  <span className="text-sky-700 font-medium">Aset: Rp {totalAssetExpense.toLocaleString('id-ID')}</span>
+                )}
               </div>
             </div>
 
