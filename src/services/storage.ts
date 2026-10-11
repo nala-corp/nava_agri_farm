@@ -2068,23 +2068,46 @@ export class StorageService {
       this.setItem(STORAGE_KEYS.ACTIVE_CYCLE, 'cycle-01');
     }
 
-    // Try background sync with Supabase
+    // Try background initial sync with Supabase (pull latest multi-device data)
     this.tryBackgroundInitialSync();
   }
 
-  private static async tryBackgroundInitialSync(): Promise<void> {
+  private static syncListeners: Array<(status: 'syncing' | 'synced' | 'pending') => void> = [];
+
+  public static onSyncStatusChange(cb: (status: 'syncing' | 'synced' | 'pending') => void) {
+    this.syncListeners.push(cb);
+    return () => {
+      this.syncListeners = this.syncListeners.filter(l => l !== cb);
+    };
+  }
+
+  public static notifySyncStatus(status: 'syncing' | 'synced' | 'pending') {
+    this.syncListeners.forEach(cb => {
+      try {
+        cb(status);
+      } catch (e) {
+        console.warn('Sync listener error:', e);
+      }
+    });
+  }
+
+  public static async tryBackgroundInitialSync(): Promise<void> {
     try {
+      this.notifySyncStatus('syncing');
       // Check if remote has data
       const remoteCycles = await SupabaseService.fetchCycles();
       if (remoteCycles && remoteCycles.length > 0) {
         // We have data in Supabase, load and update local cache
         await this.pullFromSupabase();
+        this.notifySyncStatus('synced');
       } else {
         // Supabase is empty, sync our initial data to Supabase
         await this.syncAllToSupabase();
+        this.notifySyncStatus('synced');
       }
     } catch (e) {
       console.warn('[StorageService] Initial background sync deferred:', e);
+      this.notifySyncStatus('pending');
     }
   }
 
@@ -2870,9 +2893,13 @@ export class StorageService {
       cycleId: exp.cycleId
     });
 
-    SupabaseService.upsertExpense(item).catch((err) =>
-      console.warn('[Supabase Sync Error]', err)
-    );
+    this.notifySyncStatus('syncing');
+    SupabaseService.upsertExpense(item)
+      .then((ok) => this.notifySyncStatus(ok ? 'synced' : 'pending'))
+      .catch((err) => {
+        console.warn('[Supabase Sync Error]', err);
+        this.notifySyncStatus('pending');
+      });
 
     return item;
   }
@@ -2889,9 +2916,13 @@ export class StorageService {
         description: `Memperbarui catatan pengeluaran: ${expense.description} (Rp ${expense.amount.toLocaleString('id-ID')})`,
         cycleId: expense.cycleId
       });
-      SupabaseService.upsertExpense(expense).catch((err) =>
-        console.warn('[Supabase Sync Error]', err)
-      );
+      this.notifySyncStatus('syncing');
+      SupabaseService.upsertExpense(expense)
+        .then((ok) => this.notifySyncStatus(ok ? 'synced' : 'pending'))
+        .catch((err) => {
+          console.warn('[Supabase Sync Error]', err);
+          this.notifySyncStatus('pending');
+        });
     }
   }
 

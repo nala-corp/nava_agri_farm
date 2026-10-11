@@ -494,7 +494,14 @@ export const FinanceManager: React.FC = () => {
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3 font-sans font-medium text-slate-800">{exp.description}</td>
+                        <td className="px-4 py-3 font-sans">
+                          <div className="font-medium text-slate-800">{exp.description}</div>
+                          {filterCycleId === 'all' && exp.cycleId && (
+                            <div className="text-[10px] text-emerald-800 font-semibold mt-0.5 flex items-center gap-1">
+                              <span>🌱 {cycles.find(c => c.id === exp.cycleId)?.fieldName?.split('—')[0]?.trim() || 'Kebun'}</span>
+                            </div>
+                          )}
+                        </td>
                         <td className={`px-4 py-3 font-bold ${isTool ? 'text-sky-800' : 'text-rose-700'}`}>
                           Rp {exp.amount.toLocaleString('id-ID')}
                         </td>
@@ -599,6 +606,26 @@ export const FinanceManager: React.FC = () => {
             </div>
 
             <form onSubmit={handleSaveEditedExpense} className="space-y-3">
+              {/* PEMILIHAN KEBUN / SIKLUS (BISA PINDAH SIKLUS JIKA SALAH INPUT) */}
+              <div>
+                <label className="block text-emerald-800 mb-1 font-semibold flex items-center justify-between">
+                  <span>Kebun / Siklus Budidaya</span>
+                  <span className="text-[10px] text-gray-500 font-normal">Pindah jika salah input kebun</span>
+                </label>
+                <select
+                  value={editingExpense.cycleId || ''}
+                  onChange={e => setEditingExpense({ ...editingExpense, cycleId: e.target.value })}
+                  className="w-full bg-[#f9faf8] border border-emerald-300 rounded-xl px-3 py-2 text-slate-800 font-medium focus:outline-emerald-600 focus:bg-white"
+                  required
+                >
+                  {cycles.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.fieldName} ({c.cropTypeName} - {c.varietyName}) [{c.cycleCode}]
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-gray-600 mb-1 font-medium">Tanggal</label>
@@ -738,6 +765,26 @@ export const FinanceManager: React.FC = () => {
             </div>
 
             <form onSubmit={handleSaveEditedIncome} className="space-y-3">
+              {/* PEMILIHAN KEBUN / SIKLUS (BISA PINDAH JIKA SALAH INPUT) */}
+              <div>
+                <label className="block text-emerald-800 mb-1 font-semibold flex items-center justify-between">
+                  <span>Kebun / Siklus Budidaya</span>
+                  <span className="text-[10px] text-gray-500 font-normal">Pindah jika salah input kebun</span>
+                </label>
+                <select
+                  value={editingIncome.cycleId || ''}
+                  onChange={e => setEditingIncome({ ...editingIncome, cycleId: e.target.value })}
+                  className="w-full bg-[#f9faf8] border border-emerald-300 rounded-xl px-3 py-2 text-slate-800 font-medium focus:outline-emerald-600 focus:bg-white"
+                  required
+                >
+                  {cycles.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.fieldName} ({c.cropTypeName} - {c.varietyName}) [{c.cycleCode}]
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-gray-600 mb-1 font-medium">Tanggal</label>

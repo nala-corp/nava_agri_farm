@@ -23,6 +23,7 @@ export const QuickActionModal: React.FC = () => {
     quickActionDefaultType,
     closeQuickAction,
     activeCycle,
+    cycles,
     fields,
     crops,
     sops,
@@ -63,11 +64,13 @@ export const QuickActionModal: React.FC = () => {
   const [disNotes, setDisNotes] = useState('');
 
   // Expense form
+  const [expCycleId, setExpCycleId] = useState(activeCycle?.id || '');
   const [expCategory, setExpCategory] = useState<any>('pupuk');
   const [expDesc, setExpDesc] = useState('');
   const [expAmount, setExpAmount] = useState('');
 
   // Income form
+  const [incCycleId, setIncCycleId] = useState(activeCycle?.id || '');
   const [incSource, setIncSource] = useState<any>('harvest_sale');
   const [incDesc, setIncDesc] = useState('');
   const [incAmount, setIncAmount] = useState('');
@@ -235,10 +238,11 @@ export const QuickActionModal: React.FC = () => {
 
   const handleCreateExpense = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeCycle) return;
+    const targetCycleId = expCycleId || activeCycle?.id;
+    if (!targetCycleId) return;
 
     StorageService.addExpense({
-      cycleId: activeCycle.id,
+      cycleId: targetCycleId,
       date: new Date().toISOString().split('T')[0],
       category: expCategory,
       description: expDesc,
@@ -251,10 +255,11 @@ export const QuickActionModal: React.FC = () => {
 
   const handleCreateIncome = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeCycle) return;
+    const targetCycleId = incCycleId || activeCycle?.id;
+    if (!targetCycleId) return;
 
     StorageService.addIncome({
-      cycleId: activeCycle.id,
+      cycleId: targetCycleId,
       date: new Date().toISOString().split('T')[0],
       source: (incSource as any) || 'harvest_sale',
       description: incDesc,
@@ -828,6 +833,25 @@ export const QuickActionModal: React.FC = () => {
               {/* 5. EXPENSE FORM */}
               {selectedAction === 'add_expense' && (
                 <form onSubmit={handleCreateExpense} className="space-y-3 text-xs">
+                  <div>
+                    <label className="block text-emerald-800 mb-1 font-semibold flex items-center justify-between">
+                      <span>Kebun / Siklus Tujuan</span>
+                      <span className="text-[10px] text-gray-500 font-normal">Pilih kebun untuk alokasi biaya</span>
+                    </label>
+                    <select
+                      value={expCycleId || activeCycle?.id || ''}
+                      onChange={e => setExpCycleId(e.target.value)}
+                      className="w-full bg-[#f9faf8] border border-emerald-300 rounded-lg px-3 py-2 text-slate-800 font-medium focus:outline-emerald-600 focus:bg-white"
+                      required
+                    >
+                      {cycles.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.fieldName} ({c.cropTypeName} - {c.varietyName})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-gray-600 mb-1 font-medium">Kategori Biaya</label>
@@ -882,6 +906,25 @@ export const QuickActionModal: React.FC = () => {
               {/* 6. INCOME FORM */}
               {selectedAction === 'add_income' && (
                 <form onSubmit={handleCreateIncome} className="space-y-3 text-xs">
+                  <div>
+                    <label className="block text-emerald-800 mb-1 font-semibold flex items-center justify-between">
+                      <span>Kebun / Siklus Tujuan</span>
+                      <span className="text-[10px] text-gray-500 font-normal">Pilih kebun untuk alokasi pemasukan</span>
+                    </label>
+                    <select
+                      value={incCycleId || activeCycle?.id || ''}
+                      onChange={e => setIncCycleId(e.target.value)}
+                      className="w-full bg-[#f9faf8] border border-emerald-300 rounded-lg px-3 py-2 text-slate-800 font-medium focus:outline-emerald-600 focus:bg-white"
+                      required
+                    >
+                      {cycles.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.fieldName} ({c.cropTypeName} - {c.varietyName})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-gray-600 mb-1 font-medium">Sumber Pemasukan</label>

@@ -94,10 +94,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setActiveCycleIdState(currentId);
     }
 
+    // Listen to storage sync events
+    const unsubSync = StorageService.onSyncStatusChange((status) => {
+      setSyncStatus(status);
+      if (status === 'synced') {
+        refreshData();
+      }
+    });
+
     const handleOnline = () => {
       setIsOnline(true);
       setSyncStatus('syncing');
-      setTimeout(() => setSyncStatus('synced'), 1200);
+      StorageService.tryBackgroundInitialSync()
+        .then(() => {
+          setSyncStatus('synced');
+          refreshData();
+        })
+        .catch(() => setSyncStatus('pending'));
     };
     const handleOffline = () => {
       setIsOnline(false);
@@ -108,6 +121,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     window.addEventListener('offline', handleOffline);
 
     return () => {
+      unsubSync();
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };

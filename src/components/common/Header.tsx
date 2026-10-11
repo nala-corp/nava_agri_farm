@@ -12,7 +12,10 @@ import {
   Calendar,
   Menu,
   X,
-  Sparkles
+  Sparkles,
+  Cloud,
+  CloudUpload,
+  RefreshCw
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
@@ -32,7 +35,8 @@ export const Header: React.FC<HeaderProps> = ({ onToggleMobileSidebar }) => {
     settings,
     tasks,
     inventory,
-    setActiveTab
+    setActiveTab,
+    pullFromSupabase
   } = useApp();
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -276,23 +280,50 @@ export const Header: React.FC<HeaderProps> = ({ onToggleMobileSidebar }) => {
             )}
           </div>
 
-          {/* SYNC / OFFLINE STATUS BADGE */}
-          <div 
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#f3f5f0] border border-[#e1e5db] text-[11px]"
-            title={isOnline ? 'PWA Online — Tersinkronisasi lokal & database' : 'Mode Offline — Data tersimpan aman di perangkat'}
+          {/* AUTO-SYNC CLOUD STATUS BADGE (INTERACTIVE) */}
+          <button 
+            onClick={() => {
+              if (isOnline && syncStatus !== 'syncing') {
+                pullFromSupabase();
+              }
+            }}
+            disabled={!isOnline || syncStatus === 'syncing'}
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full bg-[#f3f5f0] hover:bg-emerald-50 border border-[#e1e5db] hover:border-emerald-300 text-[11px] transition-all cursor-pointer disabled:cursor-default"
+            title={
+              !isOnline
+                ? 'Mode Offline: Perubahan tersimpan lokal dan akan otomatis diunggah begitu internet tersambung.'
+                : syncStatus === 'syncing'
+                ? 'Sedang menyinkronkan data dengan Supabase...'
+                : syncStatus === 'pending'
+                ? 'Sinkronisasi tertunda. Klik untuk sinkronkan ulang.'
+                : 'Auto-Sync Aktif: Data otomatis tersimpan di Supabase Cloud. Klik untuk refresh/tarik instan.'
+            }
           >
             {isOnline ? (
-              <>
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span className="text-gray-700 font-medium">{syncStatus === 'syncing' ? 'Syncing...' : 'Online'}</span>
-              </>
+              syncStatus === 'syncing' ? (
+                <>
+                  <RefreshCw className="w-3 h-3 text-emerald-600 animate-spin" />
+                  <span className="text-emerald-700 font-semibold hidden sm:inline">Menyimpan...</span>
+                </>
+              ) : syncStatus === 'pending' ? (
+                <>
+                  <CloudUpload className="w-3 h-3 text-amber-600 animate-bounce" />
+                  <span className="text-amber-700 font-medium hidden sm:inline">Pending Sync</span>
+                </>
+              ) : (
+                <>
+                  <Cloud className="w-3.5 h-3.5 text-emerald-600" />
+                  <span className="text-emerald-800 font-medium hidden sm:inline">Cloud Auto-Sync</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                </>
+              )
             ) : (
               <>
                 <WifiOff className="w-3 h-3 text-amber-600" />
-                <span className="text-amber-800 font-medium">Offline</span>
+                <span className="text-amber-800 font-medium hidden sm:inline">Offline</span>
               </>
             )}
-          </div>
+          </button>
 
           {/* OWNER USER AVATAR */}
           <div 

@@ -132,7 +132,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen = false, onCloseMob
             </div>
             <div>
               <h1 className="text-base font-bold tracking-tight text-emerald-900">
-                FARM<span className="font-light">OS</span>
+                NAVA<span className="font-light">FARM</span>
               </h1>
               <p className="text-[11px] text-gray-500 truncate max-w-[130px]">{settings.farmName}</p>
             </div>
