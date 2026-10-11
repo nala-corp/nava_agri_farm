@@ -1,5 +1,5 @@
 {
-  "name": "AgriSOP Farm Management",
+  "name": "Nava Agri Farm Management",
   "description": "SOP-driven cultivation management, task execution, monitoring, inventory, and analytics system for multi-crop farms.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
